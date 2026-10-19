@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Environment & secrets
+.env
+*.pem
+**/credentials*.json
+**/service-account*.json
+
+# Local data (DB, downloaded student documents, form exports with PII)
+backend/data/
+*.csv
+samples/
+Data/
+
+# Node (frontend, later phases)
+node_modules/
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
