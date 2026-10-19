@@ -188,6 +188,30 @@ Many are landscape or rotated, some bilingual or Hindi/Marathi-first.
 
   This follows from the form's fallback instructions, so it should be reported as *info*, not as an error.
 
+### Page quality measurement (Phase 4, 2026-10-19)
+
+All 969 PDF pages (410 files) and 164 images were measured. Pages were rendered at 100 dpi; scripts are in the
+session scratchpad and not part of the codebase.
+
+| Slot | Pages | Effective resolution | Notes |
+|---|---|---|---|
+| Semester PDFs | 592 | short side median **793 px ≈ 96 dpi**; 313 pages < 100 dpi, 569 < 150 dpi | the main OCR risk |
+| 10th / 12th / provisional / degree | 83–104 each | median 150–180 ppi, ~11–15 pages each < 100 ppi | mostly fine |
+
+- **Sharpness** (variance of the Laplacian, at a normalised width):
+  - useful, but it mixes several causes
+  - the lowest-scoring pages are blank back sides of degree certificates ("back to back" uploads),
+    genuinely blurred or faded phone photos, and documents that fill only a small part of the page
+  - so quality checks need separate tests for each cause: blank page, document area, blur
+- **Rotation:** a projection-profile heuristic flagged 78 pages, but only about 1 in 3 were really rotated (tables
+  with strong vertical rules fool it). Estimate: about 25 sideways pages, mostly semester sheets. Reliable detection
+  needs Tesseract's orientation detection (OSD).
+- **Photo of a document on a desk:** dark-border detection found almost none at page level, because PDF tools add white
+  margins. Document-area cropping must look for the paper region, not dark borders.
+- **Images:** 144 JPEG, 17 PNG, 2 MPO (multi-picture JPEG from phones), 1 HEIC that Pillow cannot read without a
+  plugin. Only 1 image relies on its EXIF orientation tag. Photos are as small as 340 × 420 px.
+- **Speed:** the pure-Python baseline takes a median of 0.85 s per page to render and measure at 100 dpi.
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and
