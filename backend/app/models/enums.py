@@ -39,6 +39,13 @@ class DocumentStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class QualityVerdict(StrEnum):
+    OK = "ok"
+    WARN = "warn"  # usable, but a reviewer should know (e.g. low resolution)
+    RETAKE = "retake"  # too poor to read reliably; ask the student for a better copy
+    BLANK = "blank"  # no content (e.g. back side of a certificate)
+
+
 class FieldSource(StrEnum):
     MACHINE = "machine"
     HUMAN = "human"
