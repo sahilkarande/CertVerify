@@ -248,6 +248,59 @@ def cmd_quality_report(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ocr(args: argparse.Namespace) -> int:
+    import time
+
+    from app.models import DocumentPage
+    from app.ocr.engine import TesseractEngine
+    from app.ocr.pipeline import ocr_page, pages_needing_ocr
+
+    settings = get_settings()
+    storage = _storage(settings)
+    engine = TesseractEngine()
+    db = _database()
+    statuses: Counter = Counter()
+    rotated = 0
+    started = time.perf_counter()
+    with db.session_factory() as session:
+        ids = pages_needing_ocr(session, engine.name, force=args.force)
+        if args.limit:
+            ids = ids[: args.limit]
+        for n, page_id in enumerate(ids, start=1):
+            row = ocr_page(session, storage, engine, session.get(DocumentPage, page_id))
+            session.commit()  # per page: an interrupted run resumes where it stopped
+            statuses[row.status.value] += 1
+            rotated += row.rotation != 0
+            if n % 25 == 0 or n == len(ids):
+                print(f"  {n}/{len(ids)} pages", flush=True)
+    db.dispose()
+    secs = time.perf_counter() - started
+    print(
+        f"OCR: {sum(statuses.values())} pages in {secs:.0f}s "
+        f"({secs / max(sum(statuses.values()), 1):.1f}s/page) | rotated: {rotated}"
+    )
+    print("status: " + (", ".join(f"{k}={v}" for k, v in sorted(statuses.items())) or "none"))
+    return 0
+
+
+def cmd_ocr_eval(args: argparse.Namespace) -> int:
+    from app.ocr.engine import TesseractEngine
+    from app.ocr.evaluate import evaluate
+
+    settings = get_settings()
+    gt = Path(args.ground_truth) if args.ground_truth else settings.ocr_ground_truth_file
+    if not gt.is_file():
+        print(f"error: ground truth not found: {gt}", file=sys.stderr)
+        return 2
+    db = _database()
+    with db.session_factory() as session:
+        report = evaluate(session, _storage(settings), TesseractEngine(), gt)
+    db.dispose()
+    for line in report.lines():
+        print(line)
+    return 0
+
+
 def _storage(settings):
     from app.storage import EncryptedLocalStorage
 
@@ -318,6 +371,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--limit", type=int, default=None, help="Only process this many documents")
     p.add_argument("--force", action="store_true", help="Re-process even if up to date")
     p.set_defaults(func=cmd_process)
+
+    p = sub.add_parser("ocr", help="Read text from processed pages")
+    p.add_argument("--limit", type=int, default=None, help="Only OCR this many pages")
+    p.add_argument("--force", action="store_true", help="Re-run OCR even if up to date")
+    p.set_defaults(func=cmd_ocr)
+
+    p = sub.add_parser("ocr-eval", help="Measure OCR against the labelled ground truth")
+    p.add_argument("--ground-truth", default=None, help="Ground-truth JSON (default: data dir)")
+    p.set_defaults(func=cmd_ocr_eval)
 
     sub.add_parser("quality-report", help="Summarise page quality verdicts").set_defaults(
         func=cmd_quality_report

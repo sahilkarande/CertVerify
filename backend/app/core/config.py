@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     google_token_file: Path = BACKEND_DIR / "data" / "google_token.json"
     # Respondent -> form-number mapping reviewed by a person before a folder import (has PII).
     folder_mapping_file: Path = BACKEND_DIR / "data" / "folder_mapping.csv"
+    # Hand-labelled OCR ground truth (contains PII; git-ignored).
+    ocr_ground_truth_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "ground_truth.json"
 
 
 @lru_cache

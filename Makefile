@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report
+.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval
 
 setup:
 	python3 -m venv $(VENV)
@@ -61,3 +61,12 @@ process:
 
 quality-report:
 	cd backend && .venv/bin/python -m app.cli quality-report
+
+# --- OCR (Phase 5; needs: sudo apt install tesseract-ocr) ---
+# make ocr [limit=10] [force=1]
+ocr:
+	cd backend && .venv/bin/python -m app.cli ocr $(if $(limit),--limit $(limit)) $(if $(force),--force)
+
+# Measure OCR on the hand-labelled sample (backend/data/ocr_eval/ground_truth.json)
+ocr-eval:
+	cd backend && .venv/bin/python -m app.cli ocr-eval

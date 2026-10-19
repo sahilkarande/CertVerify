@@ -236,6 +236,40 @@ Result (processing version 2): 574 documents → 1,133 pages, 0 failures, 0.48 s
 | retake | 10 | resolution 329–430 px (6 from one student's statements) |
 | blank | 1 | back side of a certificate |
 
+### OCR evaluation (Phase 5, 2026-10-19)
+
+Ground truth: 40 pages sampled by group and quality verdict, about 20 institutions, 237 key strings
+(name tokens, IDs, SGPA/CGPA/percentage/totals, institution words), hand-labelled from the page images.
+It is stored in git-ignored `backend/data/ocr_eval/` and re-measured with `make ocr-eval`.
+
+| Setting (Tesseract 5.3.4, eng) | Key recall | Rotation correct | Time/page |
+|---|---|---|---|
+| Plain, full-page layout (psm 3) | 62% | 28/40 with Tesseract OSD | 0.8 s |
+| Upscaled to 2480 px | 60% | n/a | 1.5 s |
+| **Background removal + sparse text (psm 11), 1240 px, rotation by OCR confidence** (chosen) | **75.5%** | **40/40** | 2.4–3.8 s |
+| Same + plain pass, keep better | 76.4% | 40/40 | 4.4 s |
+| Same at 1800 px | 74.3% | 39/40 | 6.2 s |
+
+- **Security-print backgrounds** made plain Tesseract return *nothing* on 7 clear pages; even Otsu
+  binarisation did not help. Background removal (dilate + median-blur estimate, keep the difference)
+  fixed most of them.
+- **Tesseract OSD** skips short certificates ("too few characters") and was wrong on 3 of the 4 sideways
+  dot-matrix sheets. Reading at each rotation and keeping the most confident result is reliable.
+- **By group:** school/diploma ~90%, degree/provisional ~83%, good semester sheets 83%,
+  low-resolution semester sheets 57%, retake pages 36% (confirms the Phase 4 verdict).
+- **By kind:** words 92%, IDs 58%, numbers 53%. Digits in tables are the weak spot, which matters for Phase 7.
+- **Readability:** pages marked `low_confidence` (mean word confidence < 50) recover 27% of keys, against 79% for
+  `ok` pages. Confidence is a useful review flag (correlation with recall 0.53), not proof of correctness.
+
+### Full OCR run (Phase 5)
+
+- 968 document pages (photos, signatures and the blank page are excluded): 896 `ok`, 72 `low_confidence`,
+  0 `no_text`, 0 failed; about 3.4 s per page on this laptop.
+- 54 pages were turned upright (49 × 270°, 5 × 90°). This is far more than the earlier ~25 estimate: Amravati
+  dot-matrix sheets, landscape grade cards and sideways certificate photos. A visual check of all 54 showed
+  them upright afterwards; the few doubtful ones have confidence below 50 and are already `low_confidence`.
+- 9 of the 10 Phase 4 `retake` pages are `low_confidence` here, so the two independent checks agree.
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and

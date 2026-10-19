@@ -21,6 +21,8 @@ dependencies = [
     "numpy>=1.26",
     "pillow>=10.3",
     "pillow-heif>=0.18",
+    # OCR (needs the system package tesseract-ocr; see README)
+    "pytesseract>=0.3.10",
 ]
 
 [project.optional-dependencies]

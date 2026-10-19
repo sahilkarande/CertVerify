@@ -46,6 +46,13 @@ class QualityVerdict(StrEnum):
     BLANK = "blank"  # no content (e.g. back side of a certificate)
 
 
+class OcrStatus(StrEnum):
+    OK = "ok"
+    LOW_CONFIDENCE = "low_confidence"  # read, but a reviewer should check it
+    NO_TEXT = "no_text"  # nothing readable found
+    FAILED = "failed"  # engine error
+
+
 class FieldSource(StrEnum):
     MACHINE = "machine"
     HUMAN = "human"

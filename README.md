@@ -109,6 +109,16 @@ make process force=1    # re-process everything
 make quality-report     # page verdicts (ok / warn / retake / blank) per upload slot
 ```
 
+## OCR
+
+Needs the system package: `sudo apt install tesseract-ocr tesseract-ocr-eng`.
+
+```bash
+make ocr                # read text from processed pages (safe to re-run; resumes if interrupted)
+make ocr force=1        # re-run OCR on everything
+make ocr-eval           # measure recall on the hand-labelled sample in backend/data/ocr_eval/
+```
+
 ## Layout
 
 ```
@@ -124,6 +134,7 @@ backend/
     seeds/           # document-type registry definitions
     importers/       # one-off seed importers (C-DAC form CSV, Google Drive)
     intake/          # open uploads, render pages, cleanup, quality checks, processing pipeline
+    ocr/             # OCR engine interface (Tesseract), preprocessing, rotation, evaluation
     api/             # router, dependencies, routes/
   migrations/        # Alembic migrations
   tests/
