@@ -35,7 +35,7 @@ degree certificates) and grows into a global product.
 | Database | SQLite (dev) → PostgreSQL; SQLAlchemy 2.0 + Alembic |
 | File storage | Storage interface: encrypted local disk (dev) → S3-compatible (MinIO/S3) |
 | Background jobs | Redis + worker queue (RQ/Celery), introduced when processing goes async |
-| Imaging / OCR | PyMuPDF, OpenCV, Tesseract 5 (eng + mar + more languages as needed), PaddleOCR if needed |
+| Imaging / OCR | pypdfium2 (permissive licence; PyMuPDF is AGPL), OpenCV, Pillow + pillow-heif, Tesseract 5 (eng + mar + more languages as needed), PaddleOCR if needed |
 | Intelligence | Rules + registry config first; ML classifier and layout-aware extraction model trained on collected labels; local LLM (Ollama) as fallback |
 | Frontend | React + TypeScript + Vite (student portal and verifier console) |
 | Auth | Email/password + OTP, JWT sessions, RBAC (student, verifier, institution admin, platform admin) |
@@ -53,8 +53,8 @@ degree certificates) and grows into a global product.
 ### Stage B: Document intelligence engine (built and measured offline on the seed data)
 | # | Phase | Delivers |
 |---|---|---|
-| 4 | Intake quality gate + preprocessing | Real file type, HEIC conversion, repair of zero-padded PDFs (17 in seed data), page rendering, rotation detection, blur/glare/resolution scoring ("retake the photo"), deskew, crop, enhance; originals always kept unchanged |
-| 5 | OCR + evaluation harness | Tesseract OCR per page with confidence; hand-labelled ground-truth set; accuracy report used by every later phase |
+| 4 | Intake quality gate + preprocessing ✅ | Real file type, HEIC/MPO/EXIF handling, padded-PDF repair, page rendering at source resolution, margin trim + small-skew correction, separate quality checks (resolution, blank, contrast, extreme blur) with student-facing reasons; originals never modified. 90° rotation moves to Phase 5 (Tesseract OSD) |
+| 5 | OCR + evaluation harness | Tesseract OCR per page with confidence (upscaling low-resolution pages), page orientation (OSD) and 90°/180° correction, readability verdict from OCR confidence; hand-labelled ground-truth set; accuracy report used by every later phase |
 | 6 | Classification | Page → document type + semester, driven by the registry; handles shuffled multi-page PDFs; "unknown" goes to review |
 | 7 | Extraction | Per-type field schemas (name, mother's name, IDs, year, marks, %, SGPA/CGPA, result). The seed data has ~10 school/diploma boards and ~25 universities, so extraction is generic first (OCR key–value + table parsing, local LLM fallback), with dedicated rules only for the most common sources (MSBSHSE, CBSE, MSBTE, SPPU, Mumbai, DBATU); per-field confidence |
 | 8 | Validation & verification rules engine | Configurable rules: completeness per requirement set, exact + content duplicates, cross-document identity, semester sequence/gaps, claimed % vs per-university CGPA formula, QR/serial-number checks where the document supports them |

@@ -212,6 +212,30 @@ session scratchpad and not part of the codebase.
   plugin. Only 1 image relies on its EXIF orientation tag. Photos are as small as 340 × 420 px.
 - **Speed:** the pure-Python baseline takes a median of 0.85 s per page to render and measure at 100 dpi.
 
+### Quality calibration and Phase 4 results (2026-10-19)
+
+The first thresholds were tuned on synthetic pages and failed on real photos: nothing was found blank or
+blurry. Recalibrated by inspecting the extremes of each metric:
+
+- **Resolution:** a 595 px (≈72 dpi A4) SPPU sheet is legible at native size. New thresholds: retake below 450 px,
+  warn below 650 px.
+- **Blur:** sharpness must be measured at native resolution, because upscaling softens low-resolution pages.
+  Even then, blurry phone photos and readable washed-out scans overlap, so only extreme blur is flagged.
+  Readability is judged in Phase 5 from OCR confidence.
+- **Blank:** paper texture gives near-empty pages 3–5% "ink"; a true blank is below 1%. Certificate back sides
+  with a postal label are not blank; recognising them is a Phase 6 task.
+- **EXIF:** 10 images carry the invalid orientation `0`; only one is really rotated.
+- **pdfium** opens all 17 zero-padded PDFs without repair (poppler could not); the repair path remains as a fallback.
+
+Result (processing version 2): 574 documents → 1,133 pages, 0 failures, 0.48 s/page on this laptop.
+
+| Verdict | Pages | Main reasons |
+|---|---|---|
+| ok | 852 | |
+| warn | 270 | low resolution (233; 221 of them semester pages), low contrast (42, mostly light security paper) |
+| retake | 10 | resolution 329–430 px (6 from one student's statements) |
+| blank | 1 | back side of a certificate |
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and

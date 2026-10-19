@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status
+.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report
 
 setup:
 	python3 -m venv $(VENV)
@@ -53,3 +53,11 @@ drive-download:
 
 import-status:
 	cd backend && .venv/bin/python -m app.cli import-status
+
+# --- Intake & preprocessing (Phase 4) ---
+# make process [limit=10] [force=1]
+process:
+	cd backend && .venv/bin/python -m app.cli process $(if $(limit),--limit $(limit)) $(if $(force),--force)
+
+quality-report:
+	cd backend && .venv/bin/python -m app.cli quality-report

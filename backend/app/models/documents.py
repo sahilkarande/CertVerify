@@ -1,13 +1,22 @@
 """Stored files, uploaded documents, their pages and extracted fields."""
 
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, IdMixin, TimestampMixin, str_enum
-from app.models.enums import DocumentStatus, FieldSource
+from app.models.enums import DocumentStatus, FieldSource, QualityVerdict
 
 
 class StoredFile(IdMixin, TimestampMixin, Base):
@@ -45,6 +54,12 @@ class Document(IdMixin, TimestampMixin, Base):
         str_enum(DocumentStatus), default=DocumentStatus.UPLOADED
     )
     page_count: Mapped[int | None] = mapped_column()
+    # Intake/preprocessing (Phase 4). Notes record what was done to read the file,
+    # e.g. {"pdf_padding_removed": true, "heic_converted": true}.
+    processing_version: Mapped[int | None] = mapped_column()
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing_error: Mapped[str | None] = mapped_column(Text)
+    processing_notes: Mapped[dict[str, Any]] = mapped_column(default=dict)
 
     submission: Mapped["Submission"] = relationship(back_populates="documents")  # noqa: F821
     file: Mapped[StoredFile] = relationship()
@@ -75,7 +90,22 @@ class DocumentPage(IdMixin, TimestampMixin, Base):
     )
     classification_confidence: Mapped[float | None] = mapped_column()
 
+    # Rendered + cleaned page image (encrypted, derived from the original; can be regenerated).
+    image_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("stored_files.id", ondelete="SET NULL")
+    )
+    width_px: Mapped[int | None] = mapped_column()
+    height_px: Mapped[int | None] = mapped_column()
+    # Short side of the source image in pixels: the real information content of the page.
+    source_short_px: Mapped[int | None] = mapped_column()
+    crop_box: Mapped[dict[str, Any] | None] = mapped_column()  # {"x","y","w","h"} in render px
+    deskew_angle: Mapped[float | None] = mapped_column()
+    quality_verdict: Mapped[QualityVerdict | None] = mapped_column(str_enum(QualityVerdict))
+    quality_reasons: Mapped[list[Any]] = mapped_column(default=list)  # e.g. ["blurry"]
+    quality_metrics: Mapped[dict[str, Any]] = mapped_column(default=dict)
+
     document: Mapped[Document] = relationship(back_populates="pages")
+    image_file: Mapped[StoredFile | None] = relationship()
 
 
 class ExtractedField(IdMixin, TimestampMixin, Base):

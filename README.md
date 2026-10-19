@@ -101,6 +101,14 @@ The files are shared *to* your Google account, so the app signs in as you with *
 In *Testing* mode Google expires the sign-in after 7 days. If that happens, run `make drive-auth` again.
 Never commit `google_client_secret.json` or `google_token.json` (both are git-ignored).
 
+## Document processing (intake & quality)
+
+```bash
+make process            # render, clean and quality-check documents not yet processed (safe to re-run)
+make process force=1    # re-process everything
+make quality-report     # page verdicts (ok / warn / retake / blank) per upload slot
+```
+
 ## Layout
 
 ```
@@ -115,6 +123,7 @@ backend/
     services/        # file storage + audit helpers
     seeds/           # document-type registry definitions
     importers/       # one-off seed importers (C-DAC form CSV, Google Drive)
+    intake/          # open uploads, render pages, cleanup, quality checks, processing pipeline
     api/             # router, dependencies, routes/
   migrations/        # Alembic migrations
   tests/

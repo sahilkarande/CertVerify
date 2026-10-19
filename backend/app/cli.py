@@ -168,6 +168,86 @@ def cmd_import_folder(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_process(args: argparse.Namespace) -> int:
+    import time
+
+    from app.intake.pipeline import PROCESSING_VERSION, process_document, summarize_verdicts
+    from app.models import Document
+
+    settings = get_settings()
+    storage = _storage(settings)
+    db = _database()
+    results, failed, skipped = [], Counter(), 0
+    started = time.perf_counter()
+    with db.session_factory() as session:
+        query = select(Document.id).order_by(Document.created_at, Document.id)
+        if not args.force:
+            query = query.where(
+                (Document.processing_version.is_(None))
+                | (Document.processing_version != PROCESSING_VERSION)
+            )
+        if args.limit:
+            query = query.limit(args.limit)
+        ids = list(session.scalars(query))
+        for n, doc_id in enumerate(ids, start=1):
+            doc = session.get(Document, doc_id)
+            result = process_document(session, storage, doc, force=args.force)
+            if result is None:
+                skipped += 1
+                continue
+            results.append(result)
+            if result.error_code:
+                failed[result.error_code] += 1
+            if n % 25 == 0 or n == len(ids):
+                print(f"  {n}/{len(ids)} documents", flush=True)
+    db.dispose()
+
+    pages = sum(r.pages for r in results)
+    secs = time.perf_counter() - started
+    print(
+        f"processed: {len(results)} documents, {pages} pages in {secs:.0f}s "
+        f"({secs / max(pages, 1):.2f}s/page) | skipped (up to date): {skipped}"
+    )
+    print("page verdicts: " + ", ".join(f"{k}={v}" for k, v in summarize_verdicts(results).items()))
+    if failed:
+        print("failed documents: " + ", ".join(f"{k}={v}" for k, v in failed.items()))
+    return 0
+
+
+def cmd_quality_report(_: argparse.Namespace) -> int:
+    from app.models import Document, DocumentPage
+
+    db = _database()
+    with db.session_factory() as session:
+        rows = session.execute(
+            select(
+                Document.slot_key, DocumentPage.quality_verdict, DocumentPage.quality_reasons
+            ).join(DocumentPage, DocumentPage.document_id == Document.id)
+        ).all()
+        notes = Counter(
+            k for n in session.scalars(select(Document.processing_notes)) for k in (n or {})
+        )
+        errors = Counter(
+            session.scalars(
+                select(Document.processing_error).where(Document.processing_error.is_not(None))
+            )
+        )
+    db.dispose()
+
+    by_slot: dict[str, Counter] = {}
+    reasons: Counter = Counter()
+    for slot, verdict, rs in rows:
+        by_slot.setdefault(slot or "-", Counter())[verdict.value if verdict else "none"] += 1
+        reasons.update(rs or [])
+    print(f"pages: {len(rows)}")
+    for slot, c in sorted(by_slot.items()):
+        print(f"  {slot:28} " + ", ".join(f"{k}={v}" for k, v in sorted(c.items())))
+    print("reasons: " + ", ".join(f"{k}={v}" for k, v in reasons.most_common()))
+    print("intake notes: " + (", ".join(f"{k}={v}" for k, v in notes.items()) or "none"))
+    print("failed documents: " + (", ".join(f"{k}={v}" for k, v in errors.items()) or "none"))
+    return 0
+
+
 def _storage(settings):
     from app.storage import EncryptedLocalStorage
 
@@ -233,6 +313,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--apply", action="store_true", help="Import (default: dry run + mapping)")
     p.add_argument("--mapping", default=None, help="Mapping CSV path (default: data dir)")
     p.set_defaults(func=cmd_import_folder)
+
+    p = sub.add_parser("process", help="Render, clean and quality-check documents")
+    p.add_argument("--limit", type=int, default=None, help="Only process this many documents")
+    p.add_argument("--force", action="store_true", help="Re-process even if up to date")
+    p.set_defaults(func=cmd_process)
+
+    sub.add_parser("quality-report", help="Summarise page quality verdicts").set_defaults(
+        func=cmd_quality_report
+    )
 
     sub.add_parser("import-status", help="Show import/download progress").set_defaults(
         func=cmd_import_status
