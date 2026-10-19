@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -18,7 +18,17 @@ def build_engine(database_url: str) -> Engine:
         if url.database and url.database != ":memory:":
             Path(url.database).parent.mkdir(parents=True, exist_ok=True)
 
-    return create_engine(database_url, connect_args=connect_args, pool_pre_ping=True)
+    engine = create_engine(database_url, connect_args=connect_args, pool_pre_ping=True)
+
+    if url.get_backend_name() == "sqlite":
+        # SQLite ignores foreign keys (and ON DELETE rules) unless enabled per connection.
+        @event.listens_for(engine, "connect")
+        def _enable_sqlite_fks(dbapi_conn, _record) -> None:
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+    return engine
 
 
 class Database:

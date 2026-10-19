@@ -10,7 +10,9 @@ from app import __version__
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.core.security import load_storage_key
 from app.db.session import Database
+from app.storage import EncryptedLocalStorage
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        settings.storage_dir.mkdir(parents=True, exist_ok=True)
         logger.info("Starting %s v%s (%s)", settings.app_name, __version__, settings.environment)
         yield
         app.state.db.dispose()
@@ -35,9 +36,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.db = Database(settings.database_url)
+    # Loaded eagerly so a missing/invalid key fails at startup, not on the first upload.
+    app.state.storage = EncryptedLocalStorage(settings.storage_dir, load_storage_key(settings))
 
     app.include_router(api_router, prefix=settings.api_prefix)
     return app
-
-
-app = create_app()

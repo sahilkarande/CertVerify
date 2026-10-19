@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -29,8 +29,10 @@ class Settings(BaseSettings):
     # Switch to PostgreSQL later, e.g. postgresql+psycopg://user:pass@localhost:5432/certverify
     database_url: str = Field(default=f"sqlite:///{BACKEND_DIR / 'data' / 'certverify.db'}")
 
-    # Local storage root for downloaded / processed documents (used from Phase 3 on).
+    # Root for encrypted document blobs.
     storage_dir: Path = BACKEND_DIR / "data" / "storage"
+    # Base64 (url-safe) of 32 random bytes. Required in production; see app/core/security.py.
+    storage_key: SecretStr | None = None
 
 
 @lru_cache
