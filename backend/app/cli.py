@@ -111,6 +111,69 @@ def cmd_drive_download(args: argparse.Namespace) -> int:
     return 0 if report.failed == 0 else 1
 
 
+def cmd_import_folder(args: argparse.Namespace) -> int:
+    from app.importers.cdac_form.folder import (
+        FolderImportError,
+        apply_import,
+        plan_mapping,
+        read_mapping,
+        scan_folder,
+        write_mapping,
+    )
+
+    settings = get_settings()
+    mapping_file = Path(args.mapping) if args.mapping else settings.folder_mapping_file
+    try:
+        scanned = scan_folder(Path(args.folder))
+    except FolderImportError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    n_files = sum(len(p) for slots in scanned.files.values() for p in slots.values())
+    print(f"folder: {len(scanned.files)} respondents, {n_files} files")
+    for w in scanned.warnings:
+        print(f"  - {w}")
+
+    db = _database()
+    try:
+        with db.session_factory() as session:
+            if not args.apply:
+                rows = plan_mapping(session, scanned)
+                session.rollback()
+                write_mapping(mapping_file, rows)
+                methods = Counter(r.method for r in rows)
+                pending = sum(not r.confirmed for r in rows)
+                print("matching: " + ", ".join(f"{m}={n}" for m, n in methods.most_common()))
+                print(f"mapping written to {mapping_file}")
+                if pending:
+                    print(
+                        f"{pending} row(s) need your review: open the file, check them, set "
+                        "confirmed=yes (fix form_number if wrong), then re-run with apply=1"
+                    )
+                else:
+                    print("all rows confirmed automatically; re-run with apply=1 to import")
+                return 0
+
+            report = apply_import(session, _storage(settings), scanned, read_mapping(mapping_file))
+    except FolderImportError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        db.dispose()
+
+    print(
+        f"students: {report.students} | files stored: {report.files_stored}, already present: "
+        f"{report.files_already_present} | Drive links marked fetched: {report.drive_refs_linked}"
+    )
+    print("stored by type: " + ", ".join(f"{m}={n}" for m, n in sorted(report.by_mime.items())))
+    return 0
+
+
+def _storage(settings):
+    from app.storage import EncryptedLocalStorage
+
+    return EncryptedLocalStorage(settings.storage_dir, load_storage_key(settings))
+
+
 def cmd_import_status(_: argparse.Namespace) -> int:
     from app.models import Applicant, Document, ImportFileRef
 
@@ -162,6 +225,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--limit", type=int, default=None, help="Only fetch this many files")
     p.add_argument("--retry-failed", action="store_true", help="Also retry failed files")
     p.set_defaults(func=cmd_drive_download)
+
+    p = sub.add_parser(
+        "import-folder", help="Import files from a local copy of the form's Drive folder"
+    )
+    p.add_argument("folder", help="The '... (File responses)' folder")
+    p.add_argument("--apply", action="store_true", help="Import (default: dry run + mapping)")
+    p.add_argument("--mapping", default=None, help="Mapping CSV path (default: data dir)")
+    p.set_defaults(func=cmd_import_folder)
 
     sub.add_parser("import-status", help="Show import/download progress").set_defaults(
         func=cmd_import_status

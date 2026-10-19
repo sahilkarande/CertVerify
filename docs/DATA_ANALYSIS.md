@@ -175,6 +175,19 @@ Degrees include B.E./B.Tech (most), B.Sc., M.Sc. and MCA, so **postgraduate reco
 
 Many are landscape or rotated, some bilingual or Hindi/Marathi-first.
 
+### Import result (Phase 3)
+
+- 82 students × 7 documents = 574 files imported. Every stored file decrypts to bytes identical to the folder.
+- Mapping methods:
+  - 8 exact, 71 all-words, 2 similar-plus-email: confirmed automatically
+  - 1 by elimination: confirmed by a person
+- **Exact duplicates:** none across students. 44 students uploaded the same file in more than one of their own slots:
+  - 42 × provisional slot + degree slot
+  - 1 × those two plus the semester PDF
+  - 1 × provisional slot + semester PDF
+
+  This follows from the form's fallback instructions, so it should be reported as *info*, not as an error.
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and

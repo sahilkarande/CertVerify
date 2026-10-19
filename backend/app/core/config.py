@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     # sign-in token. Both live in the git-ignored data directory.
     google_client_secret_file: Path = BACKEND_DIR / "data" / "google_client_secret.json"
     google_token_file: Path = BACKEND_DIR / "data" / "google_token.json"
+    # Respondent -> form-number mapping reviewed by a person before a folder import (has PII).
+    folder_mapping_file: Path = BACKEND_DIR / "data" / "folder_mapping.csv"
 
 
 @lru_cache

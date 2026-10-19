@@ -48,15 +48,15 @@ degree certificates) and grows into a global product.
 |---|---|---|
 | 1 | Foundation ✅ | App skeleton, config, logging, DB engine, health check, tests |
 | 2 | Core domain model + secure storage ✅ | Institutions, users/roles (tables only), applicants, document-type registry, requirement sets, documents, pages, extracted fields, issues, audit log; Alembic migrations; storage service with encryption at rest and content hashing |
-| 3 | Seed dataset ingestion | CSV importer + Google Drive downloader (OAuth once). All 82 students / 574 files loaded as applicants + documents, with the upload slot kept as a *weak label*. One-off importer, not core. |
+| 3 | Seed dataset ingestion ✅ | Form CSV importer (82 students) + local-folder importer for the Drive export (574 files, name-based mapping with human confirmation); optional Drive API downloader kept for later intakes |
 
 ### Stage B: Document intelligence engine (built and measured offline on the seed data)
 | # | Phase | Delivers |
 |---|---|---|
-| 4 | Intake quality gate + preprocessing | File validation (real type, size, pages, corrupt/encrypted PDFs); blur/glare/resolution scoring so the student can be told "retake the photo"; deskew, crop, enhance |
+| 4 | Intake quality gate + preprocessing | Real file type, HEIC conversion, repair of zero-padded PDFs (17 in seed data), page rendering, rotation detection, blur/glare/resolution scoring ("retake the photo"), deskew, crop, enhance; originals always kept unchanged |
 | 5 | OCR + evaluation harness | Tesseract OCR per page with confidence; hand-labelled ground-truth set; accuracy report used by every later phase |
 | 6 | Classification | Page → document type + semester, driven by the registry; handles shuffled multi-page PDFs; "unknown" goes to review |
-| 7 | Extraction | Per-type field schemas (name, mother's name, IDs, year, marks, %, SGPA/CGPA, result); layout extractors for MSBSHSE, DBATU, VIT/SPPU; generic fallback; per-field confidence |
+| 7 | Extraction | Per-type field schemas (name, mother's name, IDs, year, marks, %, SGPA/CGPA, result). The seed data has ~10 school/diploma boards and ~25 universities, so extraction is generic first (OCR key–value + table parsing, local LLM fallback), with dedicated rules only for the most common sources (MSBSHSE, CBSE, MSBTE, SPPU, Mumbai, DBATU); per-field confidence |
 | 8 | Validation & verification rules engine | Configurable rules: completeness per requirement set, exact + content duplicates, cross-document identity, semester sequence/gaps, claimed % vs per-university CGPA formula, QR/serial-number checks where the document supports them |
 
 ### Stage C: Product

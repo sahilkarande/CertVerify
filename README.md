@@ -59,7 +59,20 @@ make import-form csv=../data_feb_26.csv   # students, submissions, Drive file re
 make import-status                         # progress summary
 ```
 
-### Google Drive download: one-time setup
+### Importing the downloaded Drive folder (used for the Feb 2026 seed data)
+
+Download the form's "File responses" folder from Drive into the project root (it is git-ignored), then:
+
+```bash
+# 1. Dry run: matches each Google account name in the file names to a form row and writes
+#    backend/data/folder_mapping.csv (git-ignored, contains names)
+make import-folder dir="../PGCP-BDA  - FEB -26 (File responses)"
+# 2. Open the mapping file, check every row with confirmed=no, set it to yes (fix form_number if needed)
+# 3. Import (safe to re-run; already imported files are skipped)
+make import-folder dir="../PGCP-BDA  - FEB -26 (File responses)" apply=1
+```
+
+### Google Drive download (optional alternative): one-time setup
 
 The files are shared *to* your Google account, so the app signs in as you with **read-only** access.
 

@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run test lint format migrate seed revision import-form drive-auth drive-download import-status
+.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status
 
 setup:
 	python3 -m venv $(VENV)
@@ -36,6 +36,12 @@ revision:
 # make import-form csv=../data_feb_26.csv   (path relative to backend/)
 import-form:
 	cd backend && .venv/bin/python -m app.cli import-form "$(csv)"
+
+# Import files from the downloaded Drive folder (path relative to backend/).
+# Step 1 (dry run, writes backend/data/folder_mapping.csv):  make import-folder dir="../PGCP-BDA  - FEB -26 (File responses)"
+# Step 2 (after reviewing the mapping):                     make import-folder dir="..." apply=1
+import-folder:
+	cd backend && .venv/bin/python -m app.cli import-folder "$(dir)" $(if $(apply),--apply)
 
 # One-time Google sign-in (opens a browser)
 drive-auth:
