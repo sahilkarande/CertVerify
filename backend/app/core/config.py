@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     # Base64 (url-safe) of 32 random bytes. Required in production; see app/core/security.py.
     storage_key: SecretStr | None = None
 
+    # Seed-data importer: Google OAuth client (downloaded from Google Cloud) and the saved
+    # sign-in token. Both live in the git-ignored data directory.
+    google_client_secret_file: Path = BACKEND_DIR / "data" / "google_client_secret.json"
+    google_token_file: Path = BACKEND_DIR / "data" / "google_token.json"
+
 
 @lru_cache
 def get_settings() -> Settings:

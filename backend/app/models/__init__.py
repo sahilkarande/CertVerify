@@ -2,6 +2,7 @@
 
 from app.models.applicants import Applicant, Submission
 from app.models.documents import Document, DocumentPage, ExtractedField, StoredFile
+from app.models.imports import ImportFileRef
 from app.models.registry import DocumentType, RequirementItem, RequirementSet
 from app.models.review import AuditEvent, ValidationIssue
 from app.models.tenancy import Institution, User
@@ -13,6 +14,7 @@ __all__ = [
     "DocumentPage",
     "DocumentType",
     "ExtractedField",
+    "ImportFileRef",
     "Institution",
     "RequirementItem",
     "RequirementSet",

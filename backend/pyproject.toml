@@ -18,6 +18,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Only needed by the seed-data importer (Google Drive download), not by the core platform.
+gdrive = [
+    "google-api-python-client>=2.130",
+    "google-auth-oauthlib>=1.2",
+]
 dev = [
     "pytest>=8.2",
     "httpx2>=2.0",  # required by starlette.testclient (replaces httpx)

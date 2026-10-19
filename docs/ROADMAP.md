@@ -47,7 +47,7 @@ degree certificates) and grows into a global product.
 | # | Phase | Delivers |
 |---|---|---|
 | 1 | Foundation ✅ | App skeleton, config, logging, DB engine, health check, tests |
-| 2 | Core domain model + secure storage | Institutions, users/roles (tables only), applicants, document-type registry, requirement sets, documents, pages, extracted fields, issues, audit log; Alembic migrations; storage service with encryption at rest and content hashing |
+| 2 | Core domain model + secure storage ✅ | Institutions, users/roles (tables only), applicants, document-type registry, requirement sets, documents, pages, extracted fields, issues, audit log; Alembic migrations; storage service with encryption at rest and content hashing |
 | 3 | Seed dataset ingestion | CSV importer + Google Drive downloader (OAuth once). All 82 students / 574 files loaded as applicants + documents, with the upload slot kept as a *weak label*. One-off importer, not core. |
 
 ### Stage B: Document intelligence engine (built and measured offline on the seed data)

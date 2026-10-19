@@ -107,8 +107,88 @@ Both: "Already having Degree Certificate"; both did 10th/12th with the Maharasht
    "SEMESTER GRADE REPORT", "Statement of Grades", "degree of"). That makes rule-based classification from OCR
    text a realistic first approach.
 
-## Still unknown
+## Full file set (Drive folder export, 2026-10-19)
 
-- How many other universities/boards appear among the 82 students. Only 2 seen so far.
-- Diploma marksheets (12th slot) and provisional certificates: none seen yet.
-- Worst-case image quality across the full set.
+Folder `PGCP-BDA  - FEB -26 (File responses)/` (git-ignored) with one sub-folder per upload question.
+
+### Structure and file-to-student mapping
+
+- 7 folders × 82 files = **574 files**, the same count as the Drive links in the CSV.
+- File name = `<student's original file name> - <respondent name>.<ext>`.
+  - The respondent name is the student's **Google account name**, not the name typed into the form.
+  - Each of the 82 respondent names appears **exactly once in every folder**, so the 7 files of a student group cleanly.
+- The CSV links (Drive IDs) cannot be matched to these files, and file times were not preserved (all are the copy time).
+  Mapping to form rows must use names:
+  - 8 exact, 71 where all words of the account name appear in the form name, 2 spelling/format variants
+    (also confirmed by the email address), 1 nickname with no overlap (resolvable only by elimination
+    or by the name printed on the documents).
+- The 14 files downloaded earlier into `Data/` are byte-identical to their copies here.
+
+### File formats
+
+| Slot | Formats (by content) | Notes |
+|---|---|---|
+| 10th, 12th/Diploma, semesters, provisional, degree | 410 PDF | Sizes 41 KB–2.1 MB (2 degree files exceed the form's 1 MB limit) |
+| Photo | 69 JPEG, 12 PNG, **1 HEIC** (iPhone) | 1 file named `.png` is actually JPEG → trust content, not extension |
+| Signature | 77 JPEG, 5 PNG | Extensions include `.jfif` |
+
+- Text layer: almost none. 12–16 per slot have one, and only **4 of 82** semester PDFs → OCR is required.
+- Embedded image resolution: median 150–200 ppi for certificates, but **semester PDFs median 96 ppi**
+  (132 of 232 images below 100 ppi) → low resolution is the main OCR risk.
+- Pages: 10th/12th almost always 1; provisional/degree slots 1–4; **semester PDFs 1–14 pages** (34 have 8).
+- **17 PDFs (11 students) fail to open in standard readers.** Each is a complete PDF followed by zero-byte
+  padding (to a 1 KB boundary), probably added by a phone app. Cutting at the last `%%EOF` recovers
+  **all 17** (verified by rendering). The original bytes should be kept as evidence; repair belongs in intake.
+
+### Content variety (first page of every file in 3 slots, inspected visually)
+
+**12th / Diploma slot.** Mostly the Maharashtra State Board (HSC statement of marks), plus:
+- the HSC passing *certificate* (a different document with no marks)
+- CBSE
+- MSBTE Diploma, about 12 files
+- autonomous Government Polytechnics (Mumbai, Amravati, Aurangabad)
+- Karnataka PUE (Kannada), UP Board (Hindi), MP Board, Jharkhand JAC, Telangana BIE, Rajasthan Board
+
+At least one **10th marksheet was uploaded in the 12th slot**.
+
+**Semester slot.** Roughly 25+ universities or autonomous institutes:
+- most common: SPPU, University of Mumbai, DBATU
+- also VTU, RTMNU (incl. G H Raisoni, RCOEM, St. Vincent Pallotti), KBC NMU, Dr. BAMU, MGM University,
+  Shivaji University, RGPV, SAGE, AKTU, GLA, Graphic Era, Chandigarh, JECRC, Teerthanker Mahaveer,
+  Sanjay Ghodawat, Usha Martin, MPKV (agriculture), VIT Pune, Tatyasaheb Kore, DY Patil
+
+Layouts include:
+- colour security-print grade cards
+- old dot-matrix SPPU statements, often **rotated 90°**
+- **mobile screenshots of online result portals**
+- photos of documents lying on desks or folders
+- **supplementary/backlog** result sheets, so one semester can have several sheets
+
+Degrees include B.E./B.Tech (most), B.Sc., M.Sc. and MCA, so **postgraduate records occur too**.
+
+**Degree slot.** Contents:
+- decorative degree certificates (SPPU, Mumbai, DBATU, Shivaji, RTMNU, VTU, SGBAU, Graphic Era, Sharda, …)
+- provisional certificates and "passing certificates"
+- 7th/8th semester grade cards
+- PG statements of marks
+- at least one **10th marksheet**
+
+Many are landscape or rotated, some bilingual or Hindi/Marathi-first.
+
+### Implications
+
+1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and
+   needs no Google Cloud setup.
+2. The intake stage (Phase 4) must handle:
+   - detecting the real file type
+   - HEIC conversion
+   - padded-PDF repair
+   - rotation detection
+   - low-resolution upscaling
+   - screenshots
+3. Rule-based extraction per layout will not scale to 25+ layouts. Classification can stay rule-based (the header
+   phrases are distinctive), but extraction needs a generic approach (OCR + key–value / table parsing, local
+   LLM fallback) with per-layout rules only for the most common boards and universities (MSBSHSE, CBSE, MSBTE,
+   SPPU, Mumbai, DBATU).
+4. The document-type registry needs **`hsc_passing_certificate`** and **`pg_marksheet`/`pg_degree`** (or a
+   level attribute), and semester records need a **supplementary/attempt** notion.

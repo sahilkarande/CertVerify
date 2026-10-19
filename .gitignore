@@ -17,6 +17,7 @@ backend/data/
 *.csv
 samples/
 Data/
+*(File responses)/
 
 # Node (frontend, later phases)
 node_modules/

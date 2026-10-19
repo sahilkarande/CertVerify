@@ -50,6 +50,12 @@ class IssueSeverity(StrEnum):
     ERROR = "error"
 
 
+class ImportFileStatus(StrEnum):
+    PENDING = "pending"
+    FETCHED = "fetched"
+    FAILED = "failed"
+
+
 class IssueStatus(StrEnum):
     OPEN = "open"
     RESOLVED = "resolved"
