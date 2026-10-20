@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval
+.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval classify classify-eval classification-report
 
 setup:
 	python3 -m venv $(VENV)
@@ -70,3 +70,15 @@ ocr:
 # Measure OCR on the hand-labelled sample (backend/data/ocr_eval/ground_truth.json)
 ocr-eval:
 	cd backend && .venv/bin/python -m app.cli ocr-eval
+
+# --- Page classification (Phase 6) ---
+# make classify [force=1]
+classify:
+	cd backend && .venv/bin/python -m app.cli classify $(if $(force),--force)
+
+# Score against the hand-labelled pages (backend/data/ocr_eval/classification.json)
+classify-eval:
+	cd backend && .venv/bin/python -m app.cli classify-eval
+
+classification-report:
+	cd backend && .venv/bin/python -m app.cli classification-report

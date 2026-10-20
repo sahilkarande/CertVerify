@@ -42,6 +42,9 @@ make revision m="describe the change"   # autogenerate a migration, then review 
 make migrate
 ```
 
+Back up `backend/data/certverify.db` before migrating real data. On SQLite, migrations run with foreign keys
+disabled (table rebuilds would otherwise cascade-delete child rows) and end with an integrity check.
+
 ## File encryption key
 
 Uploaded documents are encrypted at rest (AES-256-GCM).
@@ -119,6 +122,16 @@ make ocr force=1        # re-run OCR on everything
 make ocr-eval           # measure recall on the hand-labelled sample in backend/data/ocr_eval/
 ```
 
+## Page classification
+
+```bash
+make classify                # type, semester and level for every OCR'd page (safe to re-run)
+make classify-eval           # score against the labelled pages in backend/data/ocr_eval/
+make classification-report   # detected types per upload slot (shows wrong-slot uploads)
+```
+
+Pages with confidence below 0.9 (fuzzy title match, continuation or slot hint) should be checked by a person.
+
 ## Layout
 
 ```
@@ -135,6 +148,7 @@ backend/
     importers/       # one-off seed importers (C-DAC form CSV, Google Drive)
     intake/          # open uploads, render pages, cleanup, quality checks, processing pipeline
     ocr/             # OCR engine interface (Tesseract), preprocessing, rotation, evaluation
+    classify/        # page type, semester and level rules, fallbacks, evaluation
     api/             # router, dependencies, routes/
   migrations/        # Alembic migrations
   tests/

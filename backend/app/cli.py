@@ -162,7 +162,8 @@ def cmd_import_folder(args: argparse.Namespace) -> int:
 
     print(
         f"students: {report.students} | files stored: {report.files_stored}, already present: "
-        f"{report.files_already_present} | Drive links marked fetched: {report.drive_refs_linked}"
+        f"{report.files_already_present} | Drive links marked fetched: "
+        f"{report.drive_refs_linked}, relinked: {report.drive_refs_relinked}"
     )
     print("stored by type: " + ", ".join(f"{m}={n}" for m, n in sorted(report.by_mime.items())))
     return 0
@@ -301,6 +302,74 @@ def cmd_ocr_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_classify(args: argparse.Namespace) -> int:
+    import time
+
+    from app.classify.pipeline import (
+        classify_document,
+        documents_needing_classification,
+        type_id_map,
+    )
+    from app.models import Document
+
+    db = _database()
+    methods: Counter = Counter()
+    started = time.perf_counter()
+    with db.session_factory() as session:
+        type_ids = type_id_map(session)
+        ids = documents_needing_classification(session, force=args.force)
+        for n, doc_id in enumerate(ids, start=1):
+            result = classify_document(session, session.get(Document, doc_id), type_ids)
+            session.commit()
+            methods.update(result.methods)
+            if n % 50 == 0 or n == len(ids):
+                print(f"  {n}/{len(ids)} documents", flush=True)
+    db.dispose()
+    pages = sum(methods.values())
+    print(
+        f"classified: {len(ids)} documents, {pages} pages in {time.perf_counter() - started:.0f}s"
+    )
+    print("by method: " + (", ".join(f"{k}={v}" for k, v in sorted(methods.items())) or "none"))
+    return 0
+
+
+def cmd_classify_eval(args: argparse.Namespace) -> int:
+    from app.classify.evaluate import evaluate
+
+    settings = get_settings()
+    labels = Path(args.labels) if args.labels else settings.classification_labels_file
+    if not labels.is_file():
+        print(f"error: labels not found: {labels}", file=sys.stderr)
+        return 2
+    db = _database()
+    with db.session_factory() as session:
+        report = evaluate(session, labels)
+    db.dispose()
+    for line in report.lines():
+        print(line)
+    return 0
+
+
+def cmd_classification_report(_: argparse.Namespace) -> int:
+    from app.models import Document, DocumentPage, DocumentType
+
+    db = _database()
+    with db.session_factory() as session:
+        codes = dict(session.execute(select(DocumentType.id, DocumentType.code)).all())
+        rows = session.execute(
+            select(Document.slot_key, DocumentPage.detected_type_id)
+            .join(DocumentPage, DocumentPage.document_id == Document.id)
+            .where(DocumentPage.classifier_version.is_not(None))
+        ).all()
+    db.dispose()
+    table: dict[str, Counter] = {}
+    for slot, type_id in rows:
+        table.setdefault(slot or "-", Counter())[codes.get(type_id, "unknown")] += 1
+    for slot, c in sorted(table.items()):
+        print(f"{slot:28} " + ", ".join(f"{k}={v}" for k, v in c.most_common()))
+    return 0
+
+
 def _storage(settings):
     from app.storage import EncryptedLocalStorage
 
@@ -380,6 +449,18 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("ocr-eval", help="Measure OCR against the labelled ground truth")
     p.add_argument("--ground-truth", default=None, help="Ground-truth JSON (default: data dir)")
     p.set_defaults(func=cmd_ocr_eval)
+
+    p = sub.add_parser("classify", help="Classify OCR'd pages (type, semester, level)")
+    p.add_argument("--force", action="store_true", help="Re-classify even if up to date")
+    p.set_defaults(func=cmd_classify)
+
+    p = sub.add_parser("classify-eval", help="Score classification against labelled pages")
+    p.add_argument("--labels", default=None, help="Labels JSON (default: data dir)")
+    p.set_defaults(func=cmd_classify_eval)
+
+    sub.add_parser(
+        "classification-report", help="Detected page types per upload slot"
+    ).set_defaults(func=cmd_classification_report)
 
     sub.add_parser("quality-report", help="Summarise page quality verdicts").set_defaults(
         func=cmd_quality_report

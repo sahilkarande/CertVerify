@@ -101,6 +101,12 @@ DOCUMENT_TYPES: list[dict[str, Any]] = [
         "field_schema": [],
     },
     {
+        "code": "supporting_page",
+        "name": "Supporting page (back side, instructions)",
+        "category": DocumentCategory.SUPPORTING,
+        "field_schema": [],
+    },
+    {
         "code": "signature",
         "name": "Signature",
         "category": DocumentCategory.IDENTITY_IMAGE,

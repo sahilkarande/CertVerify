@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     folder_mapping_file: Path = BACKEND_DIR / "data" / "folder_mapping.csv"
     # Hand-labelled OCR ground truth (contains PII; git-ignored).
     ocr_ground_truth_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "ground_truth.json"
+    classification_labels_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "classification.json"
 
 
 @lru_cache

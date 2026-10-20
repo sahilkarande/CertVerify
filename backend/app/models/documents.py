@@ -16,7 +16,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, IdMixin, TimestampMixin, str_enum
-from app.models.enums import DocumentStatus, FieldSource, QualityVerdict
+from app.models.enums import (
+    AcademicLevel,
+    ClassificationMethod,
+    DocumentStatus,
+    FieldSource,
+    QualityVerdict,
+)
 
 
 class StoredFile(IdMixin, TimestampMixin, Base):
@@ -89,6 +95,15 @@ class DocumentPage(IdMixin, TimestampMixin, Base):
         ForeignKey("document_types.id", ondelete="SET NULL")
     )
     classification_confidence: Mapped[float | None] = mapped_column()
+    classification_method: Mapped[ClassificationMethod | None] = mapped_column(
+        str_enum(ClassificationMethod)
+    )
+    classifier_version: Mapped[int | None] = mapped_column()
+    # Semester number(s) the page reports; year statements list two, e.g. [3, 4].
+    semesters: Mapped[list[Any]] = mapped_column(default=list)
+    academic_level: Mapped[AcademicLevel | None] = mapped_column(str_enum(AcademicLevel))
+    # Why the page got its type, e.g. ["exact:HIGHERSECONDARYCERTIFICATE"], for reviewers.
+    classification_evidence: Mapped[list[Any]] = mapped_column(default=list)
 
     # Rendered + cleaned page image (encrypted, derived from the original; can be regenerated).
     image_file_id: Mapped[uuid.UUID | None] = mapped_column(

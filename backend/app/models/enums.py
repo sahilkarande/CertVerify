@@ -13,6 +13,7 @@ class UserRole(StrEnum):
 class DocumentCategory(StrEnum):
     ACADEMIC_RECORD = "academic_record"  # marksheets, certificates: OCR + extraction
     IDENTITY_IMAGE = "identity_image"  # photo, signature: stored and displayed, not OCR'd
+    SUPPORTING = "supporting"  # back sides, instruction pages: kept, not verified
 
 
 class ApplicantSource(StrEnum):
@@ -51,6 +52,19 @@ class OcrStatus(StrEnum):
     LOW_CONFIDENCE = "low_confidence"  # read, but a reviewer should check it
     NO_TEXT = "no_text"  # nothing readable found
     FAILED = "failed"  # engine error
+
+
+class ClassificationMethod(StrEnum):
+    CONTENT_EXACT = "content_exact"  # an exact title/keyword pattern matched
+    CONTENT_FUZZY = "content_fuzzy"  # an OCR-damaged title matched approximately
+    CONTINUATION = "continuation"  # unreadable later page: same type as the page before
+    SLOT_HINT = "slot_hint"  # unreadable page in a slot that accepts only one type
+
+
+class AcademicLevel(StrEnum):
+    SCHOOL = "school"
+    UG = "ug"
+    PG = "pg"
 
 
 class FieldSource(StrEnum):

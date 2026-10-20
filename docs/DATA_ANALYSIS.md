@@ -270,6 +270,48 @@ It is stored in git-ignored `backend/data/ocr_eval/` and re-measured with `make 
   them upright afterwards; the few doubtful ones have confidence below 50 and are already `low_confidence`.
 - 9 of the 10 Phase 4 `retake` pages are `low_confidence` here, so the two independent checks agree.
 
+### Page classification (Phase 6, 2026-10-20)
+
+Labels: 80 pages in git-ignored `backend/data/ocr_eval/classification.json`. Set A is the 40 OCR-evaluation pages,
+used to tune the rules. Set B is 40 further pages sampled by slot and kept out of tuning.
+Types: 36 semester, 14 provisional/passing, 10 HSC, 9 SSC, 6 degree, 4 diploma, 1 back side.
+
+| | Set A (tuning) | Set B (held out) |
+|---|---|---|
+| Type correct (stored result, including fallbacks) | 39/40 | 38/40 |
+| Semester number exact | 26/36 across both sets | |
+
+- All 3 wrong labels are low or medium confidence (2 continuation at 0.5, 1 fuzzy at 0.7). Every high-confidence (exact)
+  label was correct, so the review rule is: confidence < 0.9 means a person checks the page.
+- Lessons:
+  - The Maharashtra board's name contains "Higher Secondary", so 40% of 10th sheets mention it.
+    Only exam titles count, and only in the page header.
+  - OCR damages titles ("SECONDARY SCHOO! CERTIFICATE"), so long titles use approximate matching. Comparing both
+    families is required, because the SSC and HSC titles are about 80% similar to each other.
+  - Roman numerals get garbled (VIII→VILL, IV→LV, II→IL).
+  - "ENTRY POINT: 10+2 (HSC)" on an SPPU passing certificate once made it a 12th sheet.
+- Full run, 968 pages:
+
+  | Method | Pages |
+  |---|---|
+  | exact content match | 854 |
+  | fuzzy content match | 11 |
+  | continuation (later unreadable page takes the previous page's type) | 38 |
+  | slot hint (unreadable page in the 10th slot) | 28 |
+  | unknown → review | 37 (3.8%) |
+
+- Wrong-slot uploads made visible by content:
+  - degree slot: 25 provisional/passing certificates and 16 semester sheets
+  - semester PDFs: 6 provisional and 2 degree certificates
+  - 12th slot: 19 diploma sheets (expected) and 1 10th sheet
+- **Migration incident.** SQLite batch migrations rebuild a table (copy, drop, rename). With foreign keys
+  enforced, the drop cascaded:
+  - the Phase 6 migration emptied `page_ocr` (restored from the pre-migration backup)
+  - the Phase 4 migration had nulled all 574 `import_file_refs.document_id` (relinked unambiguously by submission
+    and slot)
+
+  Migrations now run with foreign keys off and finish with `PRAGMA foreign_key_check`. A regression test covers it.
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and
