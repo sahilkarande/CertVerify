@@ -361,6 +361,45 @@ other students**, labelled from the images before the extractor was run on them 
 - Not extracted yet: university/board, programme, exam session, degree (fields listed as required in the registry,
   so they appear as "not found" in the run summary).
 
+### Validation (Phase 8, 2026-10-21)
+
+Rules run per submission on the classified pages and extracted fields. Each was first run on all 82 students and
+its flags checked by hand; rules that mostly flagged OCR or extraction errors were fixed at the source or dropped.
+
+| Rule | First run | After fixes | Checked by hand |
+|---|---|---|---|
+| name does not match the form (error) | 13 | 0 | all 13 were misread labels ("SURNAME FIRST") or OCR noise |
+| name partly matches (warning) | 33 | 12 (7 students) | 6/12 real: 2 students whose surname changed (marriage); others OCR damage |
+| total ÷ maximum ≠ percentage (warning) | 17 | 0 | nearly all were wrong pairings by the extractor; fixed there |
+| document missing (error) | 8 | 0 | became "substituted" or "unconfirmed" below |
+| expected degree, other document uploaded (warning) | 13 | 3 | 3/3 real (2 passing certificates, 1 grade card for "already have degree") |
+| uploaded file not recognised (warning) | 16 | 12 | correct by definition: a person must check those files |
+| semester marksheets missing (warning) | 8 | 3 | 1 confirmed (one sheet for 8 semesters); 2 not checked |
+| claimed % inconsistent with CGPA (warning) | 5 | 4 | not checked against the source documents |
+| mother's name differs (warning) | 6 | rule removed | 0/6 real: all OCR noise |
+
+Fixes found through validation:
+- **Classification**:
+  - Degree and passing certificates written in new wording ("We, the Chancellor…", "has been awarded the
+    Degree", "I certify that … passed") are now recognised.
+  - The Madhya Pradesh "High School Certificate (10+2)" sheet is now read as 10th, not 12th.
+  - SPPU year statements now get their semesters from "SECOND YEAR SGPA".
+  - Unrecognised pages went from 31 to 15. Semester numbers on the labelled pages went from 26/36 to 28/36 correct,
+    and type accuracy is unchanged.
+- **Extraction**:
+  - Totals are now paired with any percentage on the page that agrees with them.
+  - A total and percentage that disagree are lowered to review confidence instead of raising a tampering flag.
+  - Words such as "SURNAME" and "CERTIFY" are no longer accepted as names.
+  - Held-out accuracy went from 87% to 88%.
+- **Rules**:
+  - A degree certificate also satisfies "provisional".
+  - The middle (father's) name may be missing.
+  - Diploma holders who joined in the second year (lateral entry) don't need semester 1–2 sheets.
+  - Re-uploading the latest semester sheet in the degree slots is allowed for applicants awaiting results.
+  - A CGPA from an earlier semester is not used as the final one.
+
+Result: 53 students clear, 29 to review, 0 with errors. No file or ID number appears for two applicants.
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and

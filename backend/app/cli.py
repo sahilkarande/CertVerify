@@ -460,6 +460,43 @@ def cmd_extraction_report(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_validate(_: argparse.Namespace) -> int:
+    from app.models import Submission
+    from app.validate.engine import validate_submission
+
+    db = _database()
+    verdicts: Counter = Counter()
+    codes: Counter = Counter()
+    with db.session_factory() as session:
+        for sub in session.scalars(select(Submission).order_by(Submission.created_at)):
+            result = validate_submission(session, sub)
+            verdicts[result.verdict] += 1
+            codes.update(result.issues)
+        session.commit()
+    db.dispose()
+    print("submissions: " + ", ".join(f"{k}={v}" for k, v in sorted(verdicts.items())))
+    print("open issues: " + (", ".join(f"{k}={v}" for k, v in codes.most_common()) or "none"))
+    return 0
+
+
+def cmd_validation_report(_: argparse.Namespace) -> int:
+    from app.models import ValidationIssue
+
+    db = _database()
+    with db.session_factory() as session:
+        rows = session.execute(
+            select(ValidationIssue.severity, ValidationIssue.code, ValidationIssue.status,
+                   func.count(func.distinct(ValidationIssue.submission_id)), func.count())
+            .group_by(ValidationIssue.severity, ValidationIssue.code, ValidationIssue.status)
+        ).all()  # fmt: skip
+    db.dispose()
+    print("severity  issue                                    status     students  issues")
+    order = {"error": 0, "warning": 1, "info": 2}
+    for sev, code, status, students, n in sorted(rows, key=lambda r: (order[r[0]], -r[4])):
+        print(f"{sev:9} {code:40} {status:10} {students:8}  {n:6}")
+    return 0
+
+
 def _storage(settings):
     from app.storage import EncryptedLocalStorage
 
@@ -556,6 +593,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("extraction-report", help="Fields found per document type (counts)")
     p.set_defaults(func=cmd_extraction_report)
+
+    p = sub.add_parser("validate", help="Run validation rules on every submission")
+    p.set_defaults(func=cmd_validate)
+
+    p = sub.add_parser("validation-report", help="Open issues by type and severity (counts)")
+    p.set_defaults(func=cmd_validation_report)
 
     p = sub.add_parser("classify", help="Classify OCR'd pages (type, semester, level)")
     p.add_argument("--force", action="store_true", help="Re-classify even if up to date")

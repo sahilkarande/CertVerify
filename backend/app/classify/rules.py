@@ -37,13 +37,18 @@ FUZZY_MIN = 0.8
 FUZZY_MARGIN = 0.03  # the two families must differ, or the title is too damaged to tell
 
 DIPLOMA_PATTERNS = [r"BOARD OF TECHNICAL EDUCATION", r"POLYTECHNIC", r"DIPLOMA IN\b"]
-PROVISIONAL_PATTERNS = [r"PROVISIONAL", r"PASSING CERTIFICATE", r"CERTIFY THAT .{0,80}PASSED THE",
+PROVISIONAL_PATTERNS = [r"PROVISIONAL", r"PASSING CERTIFICATE", r"CERTIFY THAT .{0,80}PASSED\b",
                         r"ELIGIBLE FOR THE (AWARD OF )?(THE )?(SAID )?DEGREE",
                         r"PASSED THE .{0,80}DEGREE EXAMINATION",
                         r"FULFILLED THE .{0,40}REQUIREMENT"]  # fmt: skip
-DEGREE_PATTERNS = [r"DEGREE CERTIFICATE", r"CONFERRED", r"CONFER THE DEGREE",
-                   r"DULY QUALIFIED FOR THE DEGREE", r"CERTIFIES THAT",
-                   r"HAS BEEN ADMITTED TO THE DEGREE"]  # fmt: skip
+# Degree certificates are often only a sentence ("We, the Chancellor ... confer the degree").
+DEGREE_PATTERNS = [r"DEGREE CERTIFICATE", r"CONFERRED", r"CONFERS? (UPON|THE DEGREE)",
+                   r"CONFER THE DEGREE", r"DULY QUALIFIED FOR THE DEGREE", r"CERTIFIES THAT",
+                   r"HAS BEEN ADMITTED TO THE DEGREE", r"DEGREE SERIAL", r"THIS DEGREE OF",
+                   r"\bWE,? THE CHANC", r"AWARDED THE DEGREE"]  # fmt: skip
+# Words only a provisional/passing certificate uses; checked before the degree wording, which
+# provisional certificates also contain ("eligible for the said Degree Certificate").
+PROVISIONAL_STRONG = [r"PROVISIONAL", r"PASSING CERTIFICATE"]
 # Signals of a marks/grades statement; certificates have few of these.
 MARKSHEET_PATTERNS = [r"SEMESTER", r"\bSEM\b", r"SGPA", r"\bSPI\b", r"SGPI", r"GRADE CARD",
                       r"GRADE REPORT", r"STATEMENT OF (MARKS|GRADE)", r"PERFORMANCE REPORT",
@@ -69,6 +74,10 @@ SEMESTER_PATTERNS = [rf"SEM(?:ESTER)?\s*[:.\-]*\s*\(?{_NUM}\b",
 # SPPU "STATEMENT OF MARKS FOR F.E./S.E./T.E./B.E." covers both semesters of that year.
 YEAR_STATEMENT = re.compile(r"\bFOR\s+(F|S|T|B)\s?\.?\s?E\s?\.")
 YEAR_FIRST_SEMESTER = {"F": 1, "S": 3, "T": 5, "B": 7}
+# SPPU year statements number semesters within the year ("SEM.:1", "SEM.:2" on an S.E. sheet)
+# but end with e.g. "SECOND YEAR SGPA : 8.02", which gives the year when the title is damaged.
+YEAR_SGPA = re.compile(r"\b(FIRST|SECOND|THIRD|FOURTH|FINAL) YEAR SGPA")
+YEAR_SGPA_FIRST_SEMESTER = {"FIRST": 1, "SECOND": 3, "THIRD": 5, "FOURTH": 7, "FINAL": 7}
 
 
 @dataclass
@@ -98,10 +107,14 @@ def to_semester(token: str) -> int | None:
     return ROMAN.get(re.sub(r"[L1|]", "I", token))
 
 
-def find_semesters(header: str) -> list[int]:
+def find_semesters(header: str, full: str = "") -> list[int]:
     year = YEAR_STATEMENT.search(header)
     if year:
         first = YEAR_FIRST_SEMESTER[year.group(1)]
+        return [first, first + 1]
+    year = YEAR_SGPA.search(full)
+    if year:
+        first = YEAR_SGPA_FIRST_SEMESTER[year.group(1)]
         return [first, first + 1]
     found: list[int] = []
     for pattern in SEMESTER_PATTERNS:
@@ -112,8 +125,15 @@ def find_semesters(header: str) -> list[int]:
     return sorted(found)[:2]
 
 
+# "High School" is the 10th-grade exam on several boards (MP, UP), whose sheets also print
+# "(10+2)" for the scheme; it must win over the 10+2 pattern.
+HIGH_SCHOOL_10TH = r"(?<!SENIOR)(?<!HIGHER)HIGHSCHOOLCERTIFICATE"
+
+
 def school_level(header_compact: str) -> tuple[str | None, bool, str]:
     """(type, fuzzy, evidence) for 10th/12th titles; exact patterns win over fuzzy ones."""
+    if re.search(HIGH_SCHOOL_10TH, header_compact):
+        return SSC, False, f"exact:{HIGH_SCHOOL_10TH}"
     if p := _first(header_compact, HSC_PATTERNS):
         return HSC, False, f"exact:{p}"
     if p := _first(header_compact, SSC_PATTERNS):
@@ -137,7 +157,7 @@ def classify_text(text: str, words: list) -> Classification:
         level = AcademicLevel.SCHOOL if code in (SSC, HSC, DIPLOMA) else None
         if code in (SEMESTER, PROVISIONAL, DEGREE):
             level = AcademicLevel.PG if _first(full, PG_PATTERNS) else AcademicLevel.UG
-        sems = find_semesters(header) if code in (SEMESTER, DIPLOMA) else []
+        sems = find_semesters(header, full) if code in (SEMESTER, DIPLOMA) else []
         return Classification(
             type_code=code,
             fuzzy=fuzzy,
@@ -156,10 +176,12 @@ def classify_text(text: str, words: list) -> Classification:
         return done(DIPLOMA, f"exact:{p}")
     if n >= MARKSHEET_MIN_SIGNALS and (p := _first(full, DIPLOMA_PATTERNS[:2])):
         return done(DIPLOMA, f"exact:{p}")
-    if n <= PROVISIONAL_MAX_SIGNALS and (p := _first(full, PROVISIONAL_PATTERNS)):
+    if n <= PROVISIONAL_MAX_SIGNALS and (p := _first(full, PROVISIONAL_STRONG)):
         return done(PROVISIONAL, f"exact:{p}")
     if n <= DEGREE_MAX_SIGNALS and (p := _first(full, DEGREE_PATTERNS)):
         return done(DEGREE, f"exact:{p}")
+    if n <= PROVISIONAL_MAX_SIGNALS and (p := _first(full, PROVISIONAL_PATTERNS)):
+        return done(PROVISIONAL, f"exact:{p}")
     if n >= MARKSHEET_MIN_SIGNALS:
         return done(SEMESTER, f"signals:{','.join(signals[:4])}")
     return Classification(type_code=None, evidence=[f"marksheet_signals:{n}"])

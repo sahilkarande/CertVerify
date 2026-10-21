@@ -20,7 +20,7 @@ from app.models.enums import ClassificationMethod, DocumentCategory
 from app.ocr.pipeline import preferred_readings
 
 # Bump when rules or fallbacks change so pages are re-classified.
-CLASSIFIER_VERSION = 2
+CLASSIFIER_VERSION = 7
 
 CONTINUATION_CONFIDENCE = 0.5
 SLOT_HINT_CONFIDENCE = 0.4
@@ -60,7 +60,10 @@ def _apply(
     method: ClassificationMethod | None,
     type_ids: dict[str, object],
 ) -> None:
-    page.detected_type_id = type_ids.get(c.type_code) if c.type_code else None
+    new_type = type_ids.get(c.type_code) if c.type_code else None
+    if new_type != page.detected_type_id:
+        page.extractor_version = None  # fields depend on the type: extract again
+    page.detected_type_id = new_type
     page.classification_method = method
     page.classification_confidence = c.confidence if c.type_code else None
     page.semesters = c.semesters

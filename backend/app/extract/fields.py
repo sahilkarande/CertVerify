@@ -151,20 +151,37 @@ def _total(text: str):
     return f"{obtained}/{maximum}" if maximum else obtained, repaired
 
 
+DISAGREEMENT_CAP = 0.6
+
+
 def grades(layout: Layout) -> dict[str, Candidate]:
     out: dict[str, Candidate] = {}
+    pct_cands: list[Candidate] = []
     for key, label, parse in (
         ("sgpa", SGPA_LABEL, _gpa),
         ("cgpa", CGPA_LABEL, _gpa),
         ("percentage", PERCENT_LABEL, parse_percentage),
     ):
-        c = best(labelled(layout, key, label, parse, before=key != "percentage"), latest=True)
+        cands = labelled(layout, key, label, parse, before=key != "percentage")
+        if key == "percentage":
+            pct_cands = cands
+        c = best(cands, latest=True)
         if c:
             out[key] = c
     totals = labelled(layout, "total_marks_obtained", TOTAL_LABEL, _total,
                       tail=4, tolerance=1.0, max_gap=4)  # fmt: skip
-    pct = out.get("percentage")
-    chosen = _consistent_total(totals, pct) or best(totals, latest=True)
+    pair = _consistent_pair(totals, pct_cands)
+    if pair:
+        chosen, out["percentage"] = pair
+    else:
+        chosen = best(totals, latest=True)
+        pct = out.get("percentage")
+        if chosen and pct and "/" in chosen.value and not _agree(chosen.value, pct.value):
+            # The page's total and percentage disagree: one of them was misread (or the
+            # sheet is wrong). Either way a person must look.
+            for c in (chosen, pct):
+                c.confidence = min(c.confidence, DISAGREEMENT_CAP)
+                c.evidence.append("disagrees_with_other_marks")
     if chosen:
         obtained, _, maximum = chosen.value.partition("/")
         out["total_marks_obtained"] = Candidate(
@@ -187,17 +204,25 @@ def grades(layout: Layout) -> dict[str, Candidate]:
     return out
 
 
-def _consistent_total(totals: list[Candidate], pct: Candidate | None) -> Candidate | None:
-    """The total whose obtained / maximum matches the stated percentage (both confirmed)."""
-    if pct is None:
-        return None
-    for c in totals:
-        obtained, _, maximum = c.value.partition("/")
-        if maximum and abs(int(obtained) / int(maximum) * 100 - float(pct.value)) < 0.6:
-            c.confidence = pct.confidence = 0.95
-            c.evidence.append("matches_percentage")
-            pct.evidence.append("matches_total")
-            return c
+def _agree(total: str, pct: str) -> bool:
+    obtained, _, maximum = total.partition("/")
+    return abs(int(obtained) / int(maximum) * 100 - float(pct)) < 0.6
+
+
+def _consistent_pair(
+    totals: list[Candidate], pcts: list[Candidate]
+) -> tuple[Candidate, Candidate] | None:
+    """A total (with maximum) and a percentage that agree: both confirmed. Pages often show
+    several percentages (per semester, aggregate), so every pairing is tried."""
+    for c in sorted(totals, key=lambda c: -c.confidence):
+        if "/" not in c.value:
+            continue
+        for p in sorted(pcts, key=lambda p: -p.confidence):
+            if _agree(c.value, p.value):
+                c.confidence = p.confidence = 0.95
+                c.evidence.append("matches_percentage")
+                p.evidence.append("matches_total")
+                return c, p
     return None
 
 
@@ -242,9 +267,18 @@ NOT_PERSON = re.compile(r"MOTHER|FATHER|GUARDIAN|HUSBAND|COLLEGE|INSTITUTE|COURS
                         r"BRANCH|PROGRAM|SCHOOL|CENTRE|UNIVERSITY|EXAM")  # fmt: skip
 
 
-NON_NAME_WORDS = re.compile(
+# Boxes with these words are table rows, not names (used when searching for the form name).
+SUBJECT_WORDS = re.compile(
     r"\b(ENGINEERING|MATHEMATICS|SCIENCE|TECHNOLOGY|UNIVERSITY|COLLEGE|"
     r"INSTITUTE|BOARD|SEMESTER|EXAMINATION|STATEMENT|MARKS|GRADE)\b"
+)
+# Words that never occur in a person's name; a "name" containing one is label or body text
+# read by mistake (e.g. "SURNAME FIRST", "THIS IS FURTHER TO CERTIFY").
+NON_NAME_WORDS = re.compile(
+    r"\b(ENGINEERING|MATHEMATICS|SCIENCE|TECHNOLOGY|UNIVERSITY|COLLEGE|INSTITUTE|BOARD|"
+    r"SEMESTER|EXAMINATION|STATEMENT|MARKS|GRADE|SURNAME|FIRST|THIS|THAT|IS|TO|OF|IN|THE|"
+    r"CERTIFY|CERTIFICATE|FURTHER|SHOWN|DEPARTMENT|FACULTY|ENROLMENT|ENROLLMENT|NUMBER|"
+    r"CODE|DATE|PASSED|HELD|FOR|WITH|BY|AS)\b"
 )
 
 
@@ -311,7 +345,7 @@ def known_name(layout: Layout, full_name: str) -> Candidate | None:
         return None
     best_c: Candidate | None = None
     for box in layout.boxes:
-        if NON_NAME_WORDS.search(box.text.upper()):
+        if SUBJECT_WORDS.search(box.text.upper()):
             continue
         words = _split_merged(re.sub(r"[^A-Z\s]", " ", box.text.upper()).split(), wanted)
         hits = [i for i, w in enumerate(words) if any(_similar(w.lower(), t) for t in wanted)]

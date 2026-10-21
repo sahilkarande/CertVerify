@@ -161,6 +161,17 @@ make extraction-report    # how many pages of each type have each field (counts 
 Values are stored per page (`extracted_fields`) with a confidence and their position. Confidence ≥ 0.9 was
 right on 98% of held-out values; anything lower should be checked by a person. Needs `make classify` first.
 
+## Validation
+
+```bash
+make validate             # check every submission; stores issues (safe to re-run)
+make validation-report    # open issues by type and severity (counts only)
+```
+
+Issues are `error` (very likely wrong), `warning` (a person must look) or `info`. Automatic checks never mark a
+submission verified; submissions with warnings or errors move to `needs_review`. An issue a verifier dismissed
+stays dismissed on later runs. Needs `make extract` first; `make import-form` refreshes the requirement set.
+
 ## Layout
 
 ```
@@ -179,6 +190,7 @@ backend/
     ocr/             # OCR engine interface (Tesseract, PaddleOCR worker client), rotation, evaluation
     classify/        # page type, semester and level rules, fallbacks, evaluation
     extract/         # page layout, value parsers, field finders, storage, evaluation
+    validate/        # submission context, validation rules, issue storage
     api/             # router, dependencies, routes/
   migrations/        # Alembic migrations
   workers/paddle_ocr/  # PaddleOCR worker (runs in backend/.paddle-venv, not the app venv)

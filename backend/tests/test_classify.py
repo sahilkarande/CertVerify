@@ -258,3 +258,20 @@ def test_classification_uses_the_preferred_ocr_engine(session: Session, type_ids
     session.commit()
     classify_document(session, doc, type_ids)
     assert page.detected_type_id == type_ids[rules.SEMESTER]
+
+
+def test_year_sgpa_footer_gives_the_semesters_when_the_title_is_damaged() -> None:
+    assert find_semesters("SEM.:1 SEM.:2", "SECOND YEAR SGPA : 8.02") == [3, 4]
+    assert find_semesters("SEM.:1 SEM.:2", "") == [1, 2]
+
+
+def test_mp_high_school_is_10th_despite_10_plus_2() -> None:
+    lines = ["BOARD OF SECONDARY EDUCATION MADHYA PRADESH",
+             "HIGH SCHOOL CERTIFICATE EXAMINATION (10+2) 2018", *FILLER]  # fmt: skip
+    assert classify_lines(lines).type_code == rules.SSC
+
+
+def test_degree_certificate_in_chancellor_wording() -> None:
+    lines = ["We, the Chancellor, the Vice-Chancellor and Members of the Management Council",
+             "confer the Degree of Bachelor of Engineering on", *FILLER]  # fmt: skip
+    assert classify_lines(lines).type_code == rules.DEGREE

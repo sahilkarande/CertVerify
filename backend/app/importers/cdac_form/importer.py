@@ -64,6 +64,7 @@ def ensure_requirement_set(db: Session) -> RequirementSet:
         item.label = slot.label
         item.position = position
         item.accepted_type_codes = list(slot.accepted_type_codes)
+        item.condition = slot.condition
         item.is_required = True
         item.min_count = 1
     db.flush()

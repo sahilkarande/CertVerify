@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report
+.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report
 
 setup:
 	python3 -m venv $(VENV)
@@ -100,3 +100,11 @@ extract-eval:
 
 extraction-report:
 	cd backend && .venv/bin/python -m app.cli extraction-report
+
+# --- Validation (Phase 8) ---
+# Checks every submission and stores issues (safe to re-run; dismissed issues stay dismissed)
+validate:
+	cd backend && .venv/bin/python -m app.cli validate
+
+validation-report:
+	cd backend && .venv/bin/python -m app.cli validation-report
