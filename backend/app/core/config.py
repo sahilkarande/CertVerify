@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     folder_mapping_file: Path = BACKEND_DIR / "data" / "folder_mapping.csv"
     # Hand-labelled OCR ground truth (contains PII; git-ignored).
     ocr_ground_truth_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "ground_truth.json"
+    # PaddleOCR runs in its own venv (make paddle-setup), driven as a worker process.
+    paddle_python: Path = BACKEND_DIR / ".paddle-venv" / "bin" / "python"
+    paddle_det_model: str = "PP-OCRv6_tiny_det"
+    paddle_rec_model: str = "PP-OCRv6_tiny_rec"
+
     classification_labels_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "classification.json"
 
 

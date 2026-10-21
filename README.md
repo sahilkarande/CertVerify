@@ -122,6 +122,23 @@ make ocr force=1        # re-run OCR on everything
 make ocr-eval           # measure recall on the hand-labelled sample in backend/data/ocr_eval/
 ```
 
+### PaddleOCR (more accurate, recommended for extraction)
+
+PaddleOCR runs in its own environment (its numpy/OpenCV versions conflict with the app's) as a
+worker process the app talks to over a pipe. Tesseract still decides each page's rotation; PaddleOCR
+then reads the upright page once. When a page has both readings, later steps use PaddleOCR's.
+
+```bash
+make paddle-setup              # one-time, ~1.4 GB; models (~50 MB) download on first use
+make ocr engine=paddle         # needs make ocr first (reuses its rotations); ~5 s per page
+make ocr-eval engine=paddle
+make classify force=1          # re-classify on the better text
+```
+
+Model choice: `CERTVERIFY_PADDLE_DET_MODEL` / `CERTVERIFY_PADDLE_REC_MODEL` (default `PP-OCRv6_tiny_*`;
+`PP-OCRv6_small_*` is ~4 points more accurate and 3x slower). The worker's real-model test is opt-in:
+`CERTVERIFY_TEST_PADDLE=1 make test`.
+
 ## Page classification
 
 ```bash
@@ -147,10 +164,11 @@ backend/
     seeds/           # document-type registry definitions
     importers/       # one-off seed importers (C-DAC form CSV, Google Drive)
     intake/          # open uploads, render pages, cleanup, quality checks, processing pipeline
-    ocr/             # OCR engine interface (Tesseract), preprocessing, rotation, evaluation
+    ocr/             # OCR engine interface (Tesseract, PaddleOCR worker client), rotation, evaluation
     classify/        # page type, semester and level rules, fallbacks, evaluation
     api/             # router, dependencies, routes/
   migrations/        # Alembic migrations
+  workers/paddle_ocr/  # PaddleOCR worker (runs in backend/.paddle-venv, not the app venv)
   tests/
 docs/
 ```

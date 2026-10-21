@@ -1,0 +1,4 @@
+# PaddleOCR worker environment (separate from the app's venv: it pins its own numpy/OpenCV).
+# Create with: make paddle-setup
+paddleocr==3.7.0
+paddlepaddle==3.3.1

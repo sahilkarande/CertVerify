@@ -312,6 +312,26 @@ Types: 36 semester, 14 provisional/passing, 10 HSC, 9 SSC, 6 degree, 4 diploma, 
 
   Migrations now run with foreign keys off and finish with `PRAGMA foreign_key_check`. A regression test covers it.
 
+### OCR engine comparison (Phase 7, 2026-10-21)
+
+Extraction experiments showed Tesseract was the bottleneck: the SGPA value appeared anywhere in its text on only
+3 of 15 labelled semester pages, so no extraction rule could find the rest. PaddleOCR 3.7 (CPU only, oneDNN off
+because it crashes in paddlepaddle 3.3.1) was measured on the same 40 labelled pages, read upright:
+
+| Engine | All keys | Words | IDs | Numbers | SGPA present in text | Time per page |
+|---|---|---|---|---|---|---|
+| Tesseract 5.3.4 (Phase 5 pipeline) | 76% | 92% | 58% | 53% | 3/15 | 3.5 s |
+| PaddleOCR PP-OCRv6 medium | 96% | 99% | 83% | 96% | — | 53 s |
+| PaddleOCR PP-OCRv6 small | 95% | 98% | 83% | 95% | 12/15 | 16 s |
+| **PaddleOCR PP-OCRv6 tiny (chosen)** | **91%** | **93%** | **83%** | **90%** | **10/15** | **5.2 s** |
+
+- Tiny is the default: nearly as fast as Tesseract and the numbers recall rises from 53% to 90%. The models can be
+  changed by configuration for a stronger server.
+- Integrated (`make ocr-eval engine=paddle`, Tesseract's stored rotation, PaddleOCR reading once): 90.7% key recall
+  (ids 83%, numbers 89%, words 93%), rotation 40/40, 4.9 s/page.
+- With the better text, the remaining extraction gaps are in the rules: e.g. the total marks value is present in the
+  text on 13/15 pages but the rough rule found it on 3.
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and

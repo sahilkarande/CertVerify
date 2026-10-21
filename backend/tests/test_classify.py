@@ -247,3 +247,14 @@ def test_needing_classification_and_evaluation(
     report = evaluate(session, labels)
     assert report.by_split == {"A": [1, 1]} and report.semester == [1, 1]
     assert report.wrong_type == report.unknown == 0
+
+
+def test_classification_uses_the_preferred_ocr_engine(session: Session, type_ids: dict) -> None:
+    doc = _doc_with_pages(session, [["GARBLED TESSERACT TEXT"]], "other_docs")
+    page = session.scalars(select(DocumentPage).where(DocumentPage.document_id == doc.id)).one()
+    text = "\n".join(SEM_PAGE)
+    session.add(PageOcr(page_id=page.id, engine="paddle", engine_version="3", pipeline_version=1,
+                        status=OcrStatus.OK, text=text, words=words_for(SEM_PAGE)))  # fmt: skip
+    session.commit()
+    classify_document(session, doc, type_ids)
+    assert page.detected_type_id == type_ids[rules.SEMESTER]

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.classify.rules import Classification, classify_text
 from app.models import Document, DocumentPage, DocumentType, PageOcr, RequirementItem, Submission
 from app.models.enums import ClassificationMethod, DocumentCategory
+from app.ocr.pipeline import preferred_readings
 
 # Bump when rules or fallbacks change so pages are re-classified.
 CLASSIFIER_VERSION = 2
@@ -70,12 +71,13 @@ def _apply(
 
 def classify_document(db: Session, doc: Document, type_ids: dict[str, object]) -> DocResult:
     """Classify the document's OCR'd pages and set the document's type if they all agree."""
-    rows = db.execute(
-        select(DocumentPage, PageOcr.text, PageOcr.words)
-        .join(PageOcr, PageOcr.page_id == DocumentPage.id)
+    pages = db.scalars(
+        select(DocumentPage)
         .where(DocumentPage.document_id == doc.id)
         .order_by(DocumentPage.page_number)
     ).all()
+    readings = preferred_readings(db, [p.id for p in pages])
+    rows = [(p, readings[p.id].text, readings[p.id].words) for p in pages if p.id in readings]
     methods: Counter = Counter()
     slot_type = _slot_single_type(db, doc)
     previous: Classification | None = None

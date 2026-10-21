@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.models import DocumentPage
 from app.models.enums import OcrStatus
 from app.ocr.engine import OcrEngine
-from app.ocr.pipeline import read_page
+from app.ocr.pipeline import given_rotation, read_page
 from app.services.files import read_file
 from app.storage import ObjectStorage
 
@@ -76,15 +76,23 @@ class EvalReport:
 
 
 def evaluate(
-    db: Session, storage: ObjectStorage, engine: OcrEngine, ground_truth: Path
+    db: Session,
+    storage: ObjectStorage,
+    engine: OcrEngine,
+    ground_truth: Path,
+    *,
+    rotation_engine: OcrEngine | None = None,
 ) -> EvalReport:
+    """With ``rotation_engine``, the rotation comes from that engine's stored reading (as in
+    the OCR pipeline) and ``engine`` reads each page once."""
     items = json.loads(ground_truth.read_text())
     report = EvalReport(pages=len(items))
     started = time.perf_counter()
     for item in items:
         page = db.get(DocumentPage, uuid.UUID(item["page_id"]))
         rgb = np.asarray(Image.open(io.BytesIO(read_file(storage, page.image_file))).convert("RGB"))
-        reading = read_page(engine, rgb)
+        rotation = given_rotation(db, page.id, rgb, rotation_engine)
+        reading = read_page(engine, rgb, rotation)
         found = key_recall(reading.result.text, item["keys"])
 
         report.keys_total += len(found)

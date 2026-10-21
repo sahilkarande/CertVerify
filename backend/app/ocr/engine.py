@@ -50,7 +50,11 @@ class OcrEngine(Protocol):
     @property
     def version(self) -> str: ...
 
-    def read(self, gray: np.ndarray) -> OcrResult: ...
+    def prepare(self, rgb: np.ndarray) -> np.ndarray:
+        """Turn an upright-or-not page image into what this engine reads best."""
+        ...
+
+    def read(self, image: np.ndarray) -> OcrResult: ...
 
 
 class TesseractEngine:
@@ -67,6 +71,11 @@ class TesseractEngine:
         import pytesseract
 
         return str(pytesseract.get_tesseract_version())
+
+    def prepare(self, rgb: np.ndarray) -> np.ndarray:
+        from app.ocr.preprocess import prepare
+
+        return prepare(rgb)
 
     def read(self, gray: np.ndarray) -> OcrResult:
         import pytesseract

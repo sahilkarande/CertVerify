@@ -249,16 +249,32 @@ def cmd_quality_report(_: argparse.Namespace) -> int:
     return 0
 
 
+def _ocr_engines(settings, name: str):
+    """(engine, rotation_engine). PaddleOCR reads pages already turned upright by Tesseract,
+    which picked the right rotation on 40/40 labelled pages."""
+    from app.ocr.engine import TesseractEngine
+
+    if name == "tesseract":
+        return TesseractEngine(), None
+    from app.ocr.paddle import PaddleEngine
+
+    engine = PaddleEngine(
+        settings.paddle_python,
+        det_model=settings.paddle_det_model,
+        rec_model=settings.paddle_rec_model,
+    )
+    return engine, TesseractEngine()
+
+
 def cmd_ocr(args: argparse.Namespace) -> int:
     import time
 
     from app.models import DocumentPage
-    from app.ocr.engine import TesseractEngine
     from app.ocr.pipeline import ocr_page, pages_needing_ocr
 
     settings = get_settings()
     storage = _storage(settings)
-    engine = TesseractEngine()
+    engine, rotation_engine = _ocr_engines(settings, args.engine)
     db = _database()
     statuses: Counter = Counter()
     rotated = 0
@@ -268,16 +284,19 @@ def cmd_ocr(args: argparse.Namespace) -> int:
         if args.limit:
             ids = ids[: args.limit]
         for n, page_id in enumerate(ids, start=1):
-            row = ocr_page(session, storage, engine, session.get(DocumentPage, page_id))
+            page = session.get(DocumentPage, page_id)
+            row = ocr_page(session, storage, engine, page, rotation_engine=rotation_engine)
             session.commit()  # per page: an interrupted run resumes where it stopped
             statuses[row.status.value] += 1
             rotated += row.rotation != 0
             if n % 25 == 0 or n == len(ids):
                 print(f"  {n}/{len(ids)} pages", flush=True)
     db.dispose()
+    if hasattr(engine, "close"):
+        engine.close()
     secs = time.perf_counter() - started
     print(
-        f"OCR: {sum(statuses.values())} pages in {secs:.0f}s "
+        f"OCR ({engine.name}): {sum(statuses.values())} pages in {secs:.0f}s "
         f"({secs / max(sum(statuses.values()), 1):.1f}s/page) | rotated: {rotated}"
     )
     print("status: " + (", ".join(f"{k}={v}" for k, v in sorted(statuses.items())) or "none"))
@@ -285,7 +304,6 @@ def cmd_ocr(args: argparse.Namespace) -> int:
 
 
 def cmd_ocr_eval(args: argparse.Namespace) -> int:
-    from app.ocr.engine import TesseractEngine
     from app.ocr.evaluate import evaluate
 
     settings = get_settings()
@@ -295,7 +313,14 @@ def cmd_ocr_eval(args: argparse.Namespace) -> int:
         return 2
     db = _database()
     with db.session_factory() as session:
-        report = evaluate(session, _storage(settings), TesseractEngine(), gt)
+        engine, rotation_engine = _ocr_engines(settings, args.engine)
+        try:
+            report = evaluate(
+                session, _storage(settings), engine, gt, rotation_engine=rotation_engine
+            )
+        finally:
+            if hasattr(engine, "close"):
+                engine.close()
     db.dispose()
     for line in report.lines():
         print(line)
@@ -444,10 +469,16 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("ocr", help="Read text from processed pages")
     p.add_argument("--limit", type=int, default=None, help="Only OCR this many pages")
     p.add_argument("--force", action="store_true", help="Re-run OCR even if up to date")
+    p.add_argument(
+        "--engine", choices=["tesseract", "paddle"], default="tesseract", help="OCR engine"
+    )
     p.set_defaults(func=cmd_ocr)
 
     p = sub.add_parser("ocr-eval", help="Measure OCR against the labelled ground truth")
     p.add_argument("--ground-truth", default=None, help="Ground-truth JSON (default: data dir)")
+    p.add_argument(
+        "--engine", choices=["tesseract", "paddle"], default="tesseract", help="OCR engine"
+    )
     p.set_defaults(func=cmd_ocr_eval)
 
     p = sub.add_parser("classify", help="Classify OCR'd pages (type, semester, level)")

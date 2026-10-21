@@ -181,8 +181,13 @@ class FakeEngine:
 
     def __init__(self, fail: bool = False) -> None:
         self.fail = fail
+        self.shapes: list = []
+
+    def prepare(self, rgb: np.ndarray) -> np.ndarray:
+        return rgb
 
     def read(self, gray: np.ndarray) -> OcrResult:
+        self.shapes.append(gray.shape)
         if self.fail:
             raise RuntimeError("engine crashed")
         return OcrResult([Word(f"w{i}", 90, i, 0, 5, 5, "1.1.1") for i in range(60)])

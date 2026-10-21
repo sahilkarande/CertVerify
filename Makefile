@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval classify classify-eval classification-report
+.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report
 
 setup:
 	python3 -m venv $(VENV)
@@ -63,13 +63,19 @@ quality-report:
 	cd backend && .venv/bin/python -m app.cli quality-report
 
 # --- OCR (Phase 5; needs: sudo apt install tesseract-ocr) ---
-# make ocr [limit=10] [force=1]
+# make ocr [engine=paddle] [limit=10] [force=1]
 ocr:
-	cd backend && .venv/bin/python -m app.cli ocr $(if $(limit),--limit $(limit)) $(if $(force),--force)
+	cd backend && .venv/bin/python -m app.cli ocr $(if $(engine),--engine $(engine)) $(if $(limit),--limit $(limit)) $(if $(force),--force)
 
 # Measure OCR on the hand-labelled sample (backend/data/ocr_eval/ground_truth.json)
+# make ocr-eval [engine=paddle]
 ocr-eval:
-	cd backend && .venv/bin/python -m app.cli ocr-eval
+	cd backend && .venv/bin/python -m app.cli ocr-eval $(if $(engine),--engine $(engine))
+
+# PaddleOCR in its own venv (its numpy/OpenCV pins conflict with the app's). ~1.4 GB.
+paddle-setup:
+	python3 -m venv backend/.paddle-venv
+	backend/.paddle-venv/bin/pip install -r backend/workers/paddle_ocr/requirements.txt
 
 # --- Page classification (Phase 6) ---
 # make classify [force=1]
