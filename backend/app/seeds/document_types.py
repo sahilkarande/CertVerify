@@ -23,6 +23,7 @@ _SCHOOL_FIELDS = [
     _f("total_marks_obtained", "Total marks obtained", "number"),
     _f("total_marks_max", "Total maximum marks", "number"),
     _f("percentage", "Percentage", "number"),
+    _f("cgpa", "CGPA (CBSE grading)", "number", required=False),
     _f("result", "Result"),
 ]
 
@@ -36,6 +37,8 @@ _DEGREE_FIELDS = [
     _f("exam_session", "Examination session"),
     _f("class_awarded", "Class / division", required=False),
     _f("cgpa", "CGPA / CPI", "number", required=False),
+    _f("student_id", "PRN / enrolment number", required=False),
+    _f("seat_number", "Seat number", required=False),
 ]
 
 DOCUMENT_TYPES: list[dict[str, Any]] = [
@@ -57,9 +60,13 @@ DOCUMENT_TYPES: list[dict[str, Any]] = [
         "category": DocumentCategory.ACADEMIC_RECORD,
         "field_schema": [
             _f("candidate_name", "Candidate name"),
+            _f("mother_name", "Mother's name", required=False),
             _f("board", "Board / university"),
             _f("program", "Diploma programme"),
+            _f("student_id", "Enrolment number", required=False),
+            _f("seat_number", "Seat number", required=False),
             _f("exam_month_year", "Month & year of exam"),
+            _f("total_marks_obtained", "Total marks obtained", "number", required=False),
             _f("percentage", "Percentage", "number", required=False),
             _f("result", "Result"),
         ],
@@ -75,7 +82,10 @@ DOCUMENT_TYPES: list[dict[str, Any]] = [
             _f("institute", "Institute / college", required=False),
             _f("program", "Programme / branch"),
             _f("student_id", "PRN / GR / enrolment number"),
+            _f("seat_number", "Seat number", required=False),
             _f("semester", "Semester number", "integer"),
+            _f("total_marks_obtained", "Total marks obtained", "number", required=False),
+            _f("percentage", "Percentage", "number", required=False),
             _f("exam_session", "Examination session"),
             _f("sgpa", "SGPA / SPI", "number", required=False),
             _f("cgpa", "CGPA / CPI", "number", required=False),

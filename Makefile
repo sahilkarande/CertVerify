@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report
+.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report
 
 setup:
 	python3 -m venv $(VENV)
@@ -88,3 +88,15 @@ classify-eval:
 
 classification-report:
 	cd backend && .venv/bin/python -m app.cli classification-report
+
+# --- Field extraction (Phase 7) ---
+# make extract [force=1]
+extract:
+	cd backend && .venv/bin/python -m app.cli extract $(if $(force),--force)
+
+# Score against labelled pages: tuning set + held-out set (backend/data/ocr_eval/)
+extract-eval:
+	cd backend && .venv/bin/python -m app.cli extract-eval
+
+extraction-report:
+	cd backend && .venv/bin/python -m app.cli extraction-report

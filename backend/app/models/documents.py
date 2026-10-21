@@ -104,6 +104,8 @@ class DocumentPage(IdMixin, TimestampMixin, Base):
     academic_level: Mapped[AcademicLevel | None] = mapped_column(str_enum(AcademicLevel))
     # Why the page got its type, e.g. ["exact:HIGHERSECONDARYCERTIFICATE"], for reviewers.
     classification_evidence: Mapped[list[Any]] = mapped_column(default=list)
+    # Version of the field extractor that produced this page's machine fields.
+    extractor_version: Mapped[int | None] = mapped_column()
 
     # Rendered + cleaned page image (encrypted, derived from the original; can be regenerated).
     image_file_id: Mapped[uuid.UUID | None] = mapped_column(

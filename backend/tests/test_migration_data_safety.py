@@ -43,7 +43,7 @@ def test_downgrade_and_upgrade_keep_child_rows(tmp_path: Path) -> None:
     with engine.connect() as conn:  # the downgrade really happened (not silently rolled back)
         cols = {r[1] for r in conn.exec_driver_sql("PRAGMA table_info(document_pages)")}
     engine.dispose()
-    assert "classifier_version" not in cols
+    assert "extractor_version" not in cols  # column added by the latest migration
     command.upgrade(cfg, "head")
 
     engine = build_engine(url)

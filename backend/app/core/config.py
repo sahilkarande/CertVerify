@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     paddle_rec_model: str = "PP-OCRv6_tiny_rec"
 
     classification_labels_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "classification.json"
+    # Hand-labelled field values: tuning set and a held-out set never used to tune rules.
+    field_labels_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "fields.json"
+    field_labels_heldout_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "fields_heldout.json"
 
 
 @lru_cache

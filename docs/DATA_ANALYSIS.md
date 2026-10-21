@@ -332,6 +332,35 @@ because it crashes in paddlepaddle 3.3.1) was measured on the same 40 labelled p
 - With the better text, the remaining extraction gaps are in the rules: e.g. the total marks value is present in the
   text on 13/15 pages but the rough rule found it on 3.
 
+### Field extraction (Phase 7, 2026-10-21)
+
+Generic, layout-independent finders: a value is looked for next to its label (same OCR box, to the right on the
+same line, below in a table column, or just before the label in a sentence), parsed with OCR repairs (O→0, lost
+decimal points), and cross-checked (total ÷ maximum = percentage). The applicant's form name is searched for on the
+page, tolerating misspellings, merged words and any word order; a printed name that differs from the form is kept as
+printed at low confidence, for review. Multi-semester grade cards: the last semester's SGPA is taken.
+
+Labels (git-ignored): the 39-page tuning set used while writing the rules, and a **held-out set of 20 pages from 20
+other students**, labelled from the images before the extractor was run on them and never used for tuning.
+
+| | Tuning set (39 pages) | Held-out set (20 pages) |
+|---|---|---|
+| All labelled values correct | 151/179 (84%) | 79/91 (87%) |
+| Values with confidence ≥ 0.9 that are correct | 92/96 (96%) | 43/44 (98%) |
+| Name | 34/39 | 18/20 |
+| Mother's name | 19/22 | 8/11 |
+| SGPA / CGPA | 13/15, 12/13 | 8/8, 6/6 |
+| Percentage / total marks | 10/10, 12/15 | 5/7, 8/8 |
+| Result | 14/14 | 8/9 |
+| IDs (seat, PRN, enrolment) | 37/51 | 18/22 |
+
+- Remaining misses are mostly OCR errors that no rule can fix (e.g. a misread digit in a seat number), IDs whose
+  label sits far from the value, and small-print totals.
+- Full run: 929 classified academic pages, 4,859 fields in 10 s (extraction itself is fast; OCR is the cost).
+  SGPA found on 516 of 642 semester pages, the name on 904 of 929 pages.
+- Not extracted yet: university/board, programme, exam session, degree (fields listed as required in the registry,
+  so they appear as "not found" in the run summary).
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and

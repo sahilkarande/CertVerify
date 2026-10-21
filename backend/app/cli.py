@@ -395,6 +395,71 @@ def cmd_classification_report(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_extract(args: argparse.Namespace) -> int:
+    import time
+
+    from app.extract.pipeline import extract_page_fields, pages_needing_extraction
+    from app.models import DocumentPage
+
+    db = _database()
+    missing: Counter = Counter()
+    stored = 0
+    started = time.perf_counter()
+    with db.session_factory() as session:
+        ids = pages_needing_extraction(session, force=args.force)
+        for n, page_id in enumerate(ids, start=1):
+            result = extract_page_fields(session, session.get(DocumentPage, page_id))
+            stored += len(result.stored)
+            missing.update(result.missing_required)
+            if n % 100 == 0 or n == len(ids):
+                session.commit()
+                print(f"  {n}/{len(ids)} pages", flush=True)
+        session.commit()
+    db.dispose()
+    print(f"extracted: {len(ids)} pages, {stored} fields in {time.perf_counter() - started:.0f}s")
+    print("required fields not found: "
+          + (", ".join(f"{k}={v}" for k, v in missing.most_common()) or "none"))  # fmt: skip
+    return 0
+
+
+def cmd_extract_eval(args: argparse.Namespace) -> int:
+    from app.extract.evaluate import evaluate
+
+    settings = get_settings()
+    sets = [
+        ("tuning", settings.field_labels_file),
+        ("held-out", settings.field_labels_heldout_file),
+    ]
+    if args.labels:
+        sets = [("labels", Path(args.labels))]
+    db = _database()
+    with db.session_factory() as session:
+        for name, path in sets:
+            if not path.is_file():
+                print(f"{name}: labels not found ({path})")
+                continue
+            print(f"== {name} set")
+            for line in evaluate(session, path).lines():
+                print(line)
+    db.dispose()
+    return 0
+
+
+def cmd_extraction_report(_: argparse.Namespace) -> int:
+    from app.extract.pipeline import extraction_report
+
+    db = _database()
+    with db.session_factory() as session:
+        report = extraction_report(session)
+    db.dispose()
+    print("fields found per document type: pages with the field (high confidence)")
+    for code, c in sorted(report.items()):
+        keys = sorted(k for k in c if k != "pages" and not k.endswith(" high"))
+        print(f"{code} ({c['pages']} pages)")
+        print("  " + ", ".join(f"{k}={c[k]} ({c[k + ' high']})" for k in keys))
+    return 0
+
+
 def _storage(settings):
     from app.storage import EncryptedLocalStorage
 
@@ -480,6 +545,17 @@ def main(argv: list[str] | None = None) -> int:
         "--engine", choices=["tesseract", "paddle"], default="tesseract", help="OCR engine"
     )
     p.set_defaults(func=cmd_ocr_eval)
+
+    p = sub.add_parser("extract", help="Extract fields (names, IDs, marks) from classified pages")
+    p.add_argument("--force", action="store_true", help="Re-extract even if up to date")
+    p.set_defaults(func=cmd_extract)
+
+    p = sub.add_parser("extract-eval", help="Measure extraction against labelled pages")
+    p.add_argument("--labels", default=None, help="Labels JSON (default: tuning + held-out)")
+    p.set_defaults(func=cmd_extract_eval)
+
+    p = sub.add_parser("extraction-report", help="Fields found per document type (counts)")
+    p.set_defaults(func=cmd_extraction_report)
 
     p = sub.add_parser("classify", help="Classify OCR'd pages (type, semester, level)")
     p.add_argument("--force", action="store_true", help="Re-classify even if up to date")

@@ -149,6 +149,18 @@ make classification-report   # detected types per upload slot (shows wrong-slot 
 
 Pages with confidence below 0.9 (fuzzy title match, continuation or slot hint) should be checked by a person.
 
+## Field extraction
+
+```bash
+make extract              # names, IDs, SGPA/CGPA, percentage, total, result for every classified page
+make extract force=1      # re-extract everything (reviewer corrections are always kept)
+make extract-eval         # score on the labelled tuning set and the held-out set (backend/data/ocr_eval/)
+make extraction-report    # how many pages of each type have each field (counts only)
+```
+
+Values are stored per page (`extracted_fields`) with a confidence and their position. Confidence ≥ 0.9 was
+right on 98% of held-out values; anything lower should be checked by a person. Needs `make classify` first.
+
 ## Layout
 
 ```
@@ -166,6 +178,7 @@ backend/
     intake/          # open uploads, render pages, cleanup, quality checks, processing pipeline
     ocr/             # OCR engine interface (Tesseract, PaddleOCR worker client), rotation, evaluation
     classify/        # page type, semester and level rules, fallbacks, evaluation
+    extract/         # page layout, value parsers, field finders, storage, evaluation
     api/             # router, dependencies, routes/
   migrations/        # Alembic migrations
   workers/paddle_ocr/  # PaddleOCR worker (runs in backend/.paddle-venv, not the app venv)
