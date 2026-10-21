@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report
+.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build
 
 setup:
 	python3 -m venv $(VENV)
@@ -108,3 +108,16 @@ validate:
 
 validation-report:
 	cd backend && .venv/bin/python -m app.cli validation-report
+
+# --- Review dashboard (read-only part of Phase 12, built early) ---
+# One-time: install the dashboard's packages (frontend/node_modules)
+frontend-install:
+	cd frontend && npm ci
+
+# Build once; `make run` then serves the dashboard at http://127.0.0.1:8000/
+frontend-build:
+	cd frontend && npm run build
+
+# While editing the dashboard: http://127.0.0.1:5173 with live reload (needs `make run` too)
+frontend-dev:
+	cd frontend && npm run dev

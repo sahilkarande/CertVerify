@@ -24,7 +24,8 @@ Data/
 node_modules/
 dist/
 
-# Editors / OS
+# Editors / OS / local tooling
+.claude/
 .vscode/
 .idea/
 .DS_Store

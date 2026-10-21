@@ -172,6 +172,21 @@ Issues are `error` (very likely wrong), `warning` (a person must look) or `info`
 submission verified; submissions with warnings or errors move to `needs_review`. An issue a verifier dismissed
 stays dismissed on later runs. Needs `make extract` first; `make import-form` refreshes the requirement set.
 
+## Review dashboard
+
+A read-only screen for verifiers: every applicant with a verdict (clear / needs review / problems), and for each one
+the issues, every uploaded page (upright, with the extracted values outlined on the page and coloured by
+confidence), the page type, quality and OCR details. Needs Node.js 20.19+.
+
+```bash
+make frontend-install    # once
+make frontend-build      # after changes to frontend/
+make run                 # then open http://127.0.0.1:8000/
+```
+
+There is no sign-in yet, so the dashboard and its API answer **only requests from this computer** and are switched
+off in production. Opening an applicant or a page image is recorded in the audit log.
+
 ## Layout
 
 ```
@@ -191,9 +206,11 @@ backend/
     classify/        # page type, semester and level rules, fallbacks, evaluation
     extract/         # page layout, value parsers, field finders, storage, evaluation
     validate/        # submission context, validation rules, issue storage
+    review/          # read models for the review dashboard
     api/             # router, dependencies, routes/
   migrations/        # Alembic migrations
   workers/paddle_ocr/  # PaddleOCR worker (runs in backend/.paddle-venv, not the app venv)
+frontend/            # review dashboard (React + TypeScript + Vite)
   tests/
 docs/
 ```

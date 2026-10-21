@@ -65,7 +65,7 @@ degree certificates) and grows into a global product.
 | 9 | Authentication & security | Accounts, OTP, sessions, RBAC, tenant isolation, rate limiting, upload hardening, audit of every access |
 | 10 | Async processing pipeline | Redis worker queue; upload → quick checks (seconds) → OCR/classify/extract/validate in the background; live status to the browser |
 | 11 | Student portal | Guided checklist per requirement set; drag-and-drop or phone-camera upload; instant quality feedback; review of extracted data; clear "what to fix" messages |
-| 12 | Verifier console | Queue with issue badges; document viewer next to the extracted fields; correct, approve or reject; message the student; every correction saved as a training label |
+| 12 | Verifier console | Queue with issue badges; document viewer next to the extracted fields; correct, approve or reject; message the student; every correction saved as a training label. Read-only part built early (after Phase 8): applicant list with verdicts, issues, upright pages with extracted values outlined by confidence; local-only until Phase 9 |
 | 13 | Learning loop & universal types | Dataset export from corrections; train an ML classifier and then a layout-aware extractor; model versioning and evaluation; add a new document type from the admin UI |
 
 ### Stage D: Launch & scale
