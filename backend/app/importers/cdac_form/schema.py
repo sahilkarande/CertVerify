@@ -31,6 +31,13 @@ class UploadSlot:
     header_prefix: str
     label: str
     accepted_type_codes: tuple[str, ...]
+    # Which types satisfy the slot can depend on a form answer (see the validation engine).
+    condition: dict | None = None
+
+
+_SEM = "semester_marksheet"
+_PROV = "provisional_degree_certificate"
+_DEG = "degree_certificate"  # a degree also satisfies "provisional" (it supersedes it)
 
 
 # Order follows the form. Accepted types reflect the form's own fallback instructions:
@@ -60,13 +67,31 @@ UPLOAD_SLOTS: tuple[UploadSlot, ...] = (
         "provisional_or_latest_sem",
         "Upload Provisional Degree certificate",
         "Provisional degree certificate (else 8th/7th sem marksheet)",
-        ("provisional_degree_certificate", "semester_marksheet"),
+        (_PROV, _SEM),
+        {
+            "attribute": "degree_status",
+            "accepted_by_value": {
+                "has_degree": [_PROV, _SEM, _DEG],
+                "has_provisional": [_PROV, _DEG],
+                "awaiting_provisional": [_SEM],
+                "awaiting_final_semester": [_SEM],
+            },
+        },
     ),
     UploadSlot(
         "degree_or_fallback",
         "Upload Degree Certificate",
         "Degree certificate (else provisional, else 8th/7th sem marksheet)",
-        ("degree_certificate", "provisional_degree_certificate", "semester_marksheet"),
+        ("degree_certificate", _PROV, _SEM),
+        {
+            "attribute": "degree_status",
+            "accepted_by_value": {
+                "has_degree": ["degree_certificate"],
+                "has_provisional": [_PROV, _DEG],
+                "awaiting_provisional": [_SEM],
+                "awaiting_final_semester": [_SEM],
+            },
+        },
     ),
 )
 

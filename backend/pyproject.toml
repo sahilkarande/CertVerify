@@ -21,9 +21,19 @@ dependencies = [
     "numpy>=1.26",
     "pillow>=10.3",
     "pillow-heif>=0.18",
+    # OCR (needs the system package tesseract-ocr; see README)
+    "pytesseract>=0.3.10",
+    # Authentication: Argon2id password hashing, authenticator-app codes, QR for enrolment
+    "argon2-cffi>=23.1",
+    "pyotp>=2.9",
+    "segno>=1.6",
+    # File uploads (multipart form data)
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
+# Training models from labelled data (make train-classifier); the app itself does not need it.
+train = ["scikit-learn>=1.5"]
 # Only needed by the seed-data importer (Google Drive download), not by the core platform.
 gdrive = [
     "google-api-python-client>=2.130",

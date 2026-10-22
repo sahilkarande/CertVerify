@@ -34,12 +34,47 @@ class Settings(BaseSettings):
     # Base64 (url-safe) of 32 random bytes. Required in production; see app/core/security.py.
     storage_key: SecretStr | None = None
 
+    # Session cookie. Secure (HTTPS-only) defaults to on in production; local http needs off.
+    session_cookie_name: str = "cv_session"
+    session_cookie_secure: bool | None = None
+
+    @property
+    def cookie_secure(self) -> bool:
+        if self.session_cookie_secure is not None:
+            return self.session_cookie_secure
+        return self.environment == "production"
+
+    # Outgoing email (student sign-in codes). "outbox" writes messages to files on this
+    # machine for development; "smtp" sends them (e.g. Gmail with an app password).
+    email_backend: Literal["outbox", "smtp"] = "outbox"
+    email_from: str = "CertVerify <no-reply@certverify.local>"
+    outbox_dir: Path = BACKEND_DIR / "data" / "outbox"
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587  # STARTTLS
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+
+    # Trained models (JSON) and the minimum probability at which the page-type model may
+    # type a page the rules could not (measured: 8/8 correct at >= 0.6 on unrecognised pages).
+    models_dir: Path = BACKEND_DIR / "data" / "models"
+
     # Seed-data importer: Google OAuth client (downloaded from Google Cloud) and the saved
     # sign-in token. Both live in the git-ignored data directory.
     google_client_secret_file: Path = BACKEND_DIR / "data" / "google_client_secret.json"
     google_token_file: Path = BACKEND_DIR / "data" / "google_token.json"
     # Respondent -> form-number mapping reviewed by a person before a folder import (has PII).
     folder_mapping_file: Path = BACKEND_DIR / "data" / "folder_mapping.csv"
+    # Hand-labelled OCR ground truth (contains PII; git-ignored).
+    ocr_ground_truth_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "ground_truth.json"
+    # PaddleOCR runs in its own venv (make paddle-setup), driven as a worker process.
+    paddle_python: Path = BACKEND_DIR / ".paddle-venv" / "bin" / "python"
+    paddle_det_model: str = "PP-OCRv6_tiny_det"
+    paddle_rec_model: str = "PP-OCRv6_tiny_rec"
+
+    classification_labels_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "classification.json"
+    # Hand-labelled field values: tuning set and a held-out set never used to tune rules.
+    field_labels_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "fields.json"
+    field_labels_heldout_file: Path = BACKEND_DIR / "data" / "ocr_eval" / "fields_heldout.json"
 
 
 @lru_cache

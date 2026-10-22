@@ -24,6 +24,10 @@ class DocumentType(IdMixin, TimestampMixin, Base):
     # Fields expected on this type: [{"key", "label", "type", "required"}, ...]
     field_schema: Mapped[list[Any]] = mapped_column(default=list)
     is_active: Mapped[bool] = mapped_column(default=True)
+    # How to recognise it without code, e.g. {"title_phrases": ["transcript of records"]}.
+    recognition: Mapped[dict[str, Any]] = mapped_column(default=dict, server_default="{}")
+    # Shipped with the platform (schema kept by the seed) vs created by an admin.
+    builtin: Mapped[bool] = mapped_column(default=False, server_default="0")
 
 
 class RequirementSet(IdMixin, TimestampMixin, Base):

@@ -29,6 +29,8 @@ class ValidationIssue(IdMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Why it was resolved or dismissed (required for a dismissal).
+    resolution_note: Mapped[str | None] = mapped_column(Text)
 
 
 class AuditEvent(IdMixin, Base):

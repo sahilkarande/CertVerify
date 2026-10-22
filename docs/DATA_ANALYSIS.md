@@ -212,6 +212,314 @@ session scratchpad and not part of the codebase.
   plugin. Only 1 image relies on its EXIF orientation tag. Photos are as small as 340 × 420 px.
 - **Speed:** the pure-Python baseline takes a median of 0.85 s per page to render and measure at 100 dpi.
 
+### Quality calibration and Phase 4 results (2026-10-19)
+
+The first thresholds were tuned on synthetic pages and failed on real photos: nothing was found blank or
+blurry. Recalibrated by inspecting the extremes of each metric:
+
+- **Resolution:** a 595 px (≈72 dpi A4) SPPU sheet is legible at native size. New thresholds: retake below 450 px,
+  warn below 650 px.
+- **Blur:** sharpness must be measured at native resolution, because upscaling softens low-resolution pages.
+  Even then, blurry phone photos and readable washed-out scans overlap, so only extreme blur is flagged.
+  Readability is judged in Phase 5 from OCR confidence.
+- **Blank:** paper texture gives near-empty pages 3–5% "ink"; a true blank is below 1%. Certificate back sides
+  with a postal label are not blank; recognising them is a Phase 6 task.
+- **EXIF:** 10 images carry the invalid orientation `0`; only one is really rotated.
+- **pdfium** opens all 17 zero-padded PDFs without repair (poppler could not); the repair path remains as a fallback.
+
+Result (processing version 2): 574 documents → 1,133 pages, 0 failures, 0.48 s/page on this laptop.
+
+| Verdict | Pages | Main reasons |
+|---|---|---|
+| ok | 852 | |
+| warn | 270 | low resolution (233; 221 of them semester pages), low contrast (42, mostly light security paper) |
+| retake | 10 | resolution 329–430 px (6 from one student's statements) |
+| blank | 1 | back side of a certificate |
+
+### OCR evaluation (Phase 5, 2026-10-19)
+
+Ground truth: 40 pages sampled by group and quality verdict, about 20 institutions, 237 key strings
+(name tokens, IDs, SGPA/CGPA/percentage/totals, institution words), hand-labelled from the page images.
+It is stored in git-ignored `backend/data/ocr_eval/` and re-measured with `make ocr-eval`.
+
+| Setting (Tesseract 5.3.4, eng) | Key recall | Rotation correct | Time/page |
+|---|---|---|---|
+| Plain, full-page layout (psm 3) | 62% | 28/40 with Tesseract OSD | 0.8 s |
+| Upscaled to 2480 px | 60% | n/a | 1.5 s |
+| **Background removal + sparse text (psm 11), 1240 px, rotation by OCR confidence** (chosen) | **75.5%** | **40/40** | 2.4–3.8 s |
+| Same + plain pass, keep better | 76.4% | 40/40 | 4.4 s |
+| Same at 1800 px | 74.3% | 39/40 | 6.2 s |
+
+- **Security-print backgrounds** made plain Tesseract return *nothing* on 7 clear pages; even Otsu
+  binarisation did not help. Background removal (dilate + median-blur estimate, keep the difference)
+  fixed most of them.
+- **Tesseract OSD** skips short certificates ("too few characters") and was wrong on 3 of the 4 sideways
+  dot-matrix sheets. Reading at each rotation and keeping the most confident result is reliable.
+- **By group:** school/diploma ~90%, degree/provisional ~83%, good semester sheets 83%,
+  low-resolution semester sheets 57%, retake pages 36% (confirms the Phase 4 verdict).
+- **By kind:** words 92%, IDs 58%, numbers 53%. Digits in tables are the weak spot, which matters for Phase 7.
+- **Readability:** pages marked `low_confidence` (mean word confidence < 50) recover 27% of keys, against 79% for
+  `ok` pages. Confidence is a useful review flag (correlation with recall 0.53), not proof of correctness.
+
+### Full OCR run (Phase 5)
+
+- 968 document pages (photos, signatures and the blank page are excluded): 896 `ok`, 72 `low_confidence`,
+  0 `no_text`, 0 failed; about 3.4 s per page on this laptop.
+- 54 pages were turned upright (49 × 270°, 5 × 90°). This is far more than the earlier ~25 estimate: Amravati
+  dot-matrix sheets, landscape grade cards and sideways certificate photos. A visual check of all 54 showed
+  them upright afterwards; the few doubtful ones have confidence below 50 and are already `low_confidence`.
+- 9 of the 10 Phase 4 `retake` pages are `low_confidence` here, so the two independent checks agree.
+
+### Page classification (Phase 6, 2026-10-20)
+
+Labels: 80 pages in git-ignored `backend/data/ocr_eval/classification.json`. Set A is the 40 OCR-evaluation pages,
+used to tune the rules. Set B is 40 further pages sampled by slot and kept out of tuning.
+Types: 36 semester, 14 provisional/passing, 10 HSC, 9 SSC, 6 degree, 4 diploma, 1 back side.
+
+| | Set A (tuning) | Set B (held out) |
+|---|---|---|
+| Type correct (stored result, including fallbacks) | 39/40 | 38/40 |
+| Semester number exact | 26/36 across both sets | |
+
+- All 3 wrong labels are low or medium confidence (2 continuation at 0.5, 1 fuzzy at 0.7). Every high-confidence (exact)
+  label was correct, so the review rule is: confidence < 0.9 means a person checks the page.
+- Lessons:
+  - The Maharashtra board's name contains "Higher Secondary", so 40% of 10th sheets mention it.
+    Only exam titles count, and only in the page header.
+  - OCR damages titles ("SECONDARY SCHOO! CERTIFICATE"), so long titles use approximate matching. Comparing both
+    families is required, because the SSC and HSC titles are about 80% similar to each other.
+  - Roman numerals get garbled (VIII→VILL, IV→LV, II→IL).
+  - "ENTRY POINT: 10+2 (HSC)" on an SPPU passing certificate once made it a 12th sheet.
+- Full run, 968 pages:
+
+  | Method | Pages |
+  |---|---|
+  | exact content match | 854 |
+  | fuzzy content match | 11 |
+  | continuation (later unreadable page takes the previous page's type) | 38 |
+  | slot hint (unreadable page in the 10th slot) | 28 |
+  | unknown → review | 37 (3.8%) |
+
+- Wrong-slot uploads made visible by content:
+  - degree slot: 25 provisional/passing certificates and 16 semester sheets
+  - semester PDFs: 6 provisional and 2 degree certificates
+  - 12th slot: 19 diploma sheets (expected) and 1 10th sheet
+- **Migration incident.** SQLite batch migrations rebuild a table (copy, drop, rename). With foreign keys
+  enforced, the drop cascaded:
+  - the Phase 6 migration emptied `page_ocr` (restored from the pre-migration backup)
+  - the Phase 4 migration had nulled all 574 `import_file_refs.document_id` (relinked unambiguously by submission
+    and slot)
+
+  Migrations now run with foreign keys off and finish with `PRAGMA foreign_key_check`. A regression test covers it.
+
+### OCR engine comparison (Phase 7, 2026-10-21)
+
+Extraction experiments showed Tesseract was the bottleneck: the SGPA value appeared anywhere in its text on only
+3 of 15 labelled semester pages, so no extraction rule could find the rest. PaddleOCR 3.7 (CPU only, oneDNN off
+because it crashes in paddlepaddle 3.3.1) was measured on the same 40 labelled pages, read upright:
+
+| Engine | All keys | Words | IDs | Numbers | SGPA present in text | Time per page |
+|---|---|---|---|---|---|---|
+| Tesseract 5.3.4 (Phase 5 pipeline) | 76% | 92% | 58% | 53% | 3/15 | 3.5 s |
+| PaddleOCR PP-OCRv6 medium | 96% | 99% | 83% | 96% | — | 53 s |
+| PaddleOCR PP-OCRv6 small | 95% | 98% | 83% | 95% | 12/15 | 16 s |
+| **PaddleOCR PP-OCRv6 tiny (chosen)** | **91%** | **93%** | **83%** | **90%** | **10/15** | **5.2 s** |
+
+- Tiny is the default: nearly as fast as Tesseract and the numbers recall rises from 53% to 90%. The models can be
+  changed by configuration for a stronger server.
+- Integrated (`make ocr-eval engine=paddle`, Tesseract's stored rotation, PaddleOCR reading once): 90.7% key recall
+  (ids 83%, numbers 89%, words 93%), rotation 40/40, 4.9 s/page.
+- With the better text, the remaining extraction gaps are in the rules: e.g. the total marks value is present in the
+  text on 13/15 pages but the rough rule found it on 3.
+
+### Field extraction (Phase 7, 2026-10-21)
+
+Generic, layout-independent finders: a value is looked for next to its label (same OCR box, to the right on the
+same line, below in a table column, or just before the label in a sentence), parsed with OCR repairs (O→0, lost
+decimal points), and cross-checked (total ÷ maximum = percentage). The applicant's form name is searched for on the
+page, tolerating misspellings, merged words and any word order; a printed name that differs from the form is kept as
+printed at low confidence, for review. Multi-semester grade cards: the last semester's SGPA is taken.
+
+Labels (git-ignored): the 39-page tuning set used while writing the rules, and a **held-out set of 20 pages from 20
+other students**, labelled from the images before the extractor was run on them and never used for tuning.
+
+| | Tuning set (39 pages) | Held-out set (20 pages) |
+|---|---|---|
+| All labelled values correct | 151/179 (84%) | 79/91 (87%) |
+| Values with confidence ≥ 0.9 that are correct | 92/96 (96%) | 43/44 (98%) |
+| Name | 34/39 | 18/20 |
+| Mother's name | 19/22 | 8/11 |
+| SGPA / CGPA | 13/15, 12/13 | 8/8, 6/6 |
+| Percentage / total marks | 10/10, 12/15 | 5/7, 8/8 |
+| Result | 14/14 | 8/9 |
+| IDs (seat, PRN, enrolment) | 37/51 | 18/22 |
+
+- Remaining misses are mostly OCR errors that no rule can fix (e.g. a misread digit in a seat number), IDs whose
+  label sits far from the value, and small-print totals.
+- Full run: 929 classified academic pages, 4,859 fields in 10 s (extraction itself is fast; OCR is the cost).
+  SGPA found on 516 of 642 semester pages, the name on 904 of 929 pages.
+- Not extracted yet: university/board, programme, exam session, degree (fields listed as required in the registry,
+  so they appear as "not found" in the run summary).
+
+### Validation (Phase 8, 2026-10-21)
+
+Rules run per submission on the classified pages and extracted fields. Each was first run on all 82 students and
+its flags checked by hand; rules that mostly flagged OCR or extraction errors were fixed at the source or dropped.
+
+| Rule | First run | After fixes | Checked by hand |
+|---|---|---|---|
+| name does not match the form (error) | 13 | 0 | all 13 were misread labels ("SURNAME FIRST") or OCR noise |
+| name partly matches (warning) | 33 | 12 (7 students) | 6/12 real: 2 students whose surname changed (marriage); others OCR damage |
+| total ÷ maximum ≠ percentage (warning) | 17 | 0 | nearly all were wrong pairings by the extractor; fixed there |
+| document missing (error) | 8 | 0 | became "substituted" or "unconfirmed" below |
+| expected degree, other document uploaded (warning) | 13 | 3 | 3/3 real (2 passing certificates, 1 grade card for "already have degree") |
+| uploaded file not recognised (warning) | 16 | 12 | correct by definition: a person must check those files |
+| semester marksheets missing (warning) | 8 | 3 | 1 confirmed (one sheet for 8 semesters); 2 not checked |
+| claimed % inconsistent with CGPA (warning) | 5 | 4 | not checked against the source documents |
+| mother's name differs (warning) | 6 | rule removed | 0/6 real: all OCR noise |
+
+Fixes found through validation:
+- **Classification**:
+  - Degree and passing certificates written in new wording ("We, the Chancellor…", "has been awarded the
+    Degree", "I certify that … passed") are now recognised.
+  - The Madhya Pradesh "High School Certificate (10+2)" sheet is now read as 10th, not 12th.
+  - SPPU year statements now get their semesters from "SECOND YEAR SGPA".
+  - Unrecognised pages went from 31 to 15. Semester numbers on the labelled pages went from 26/36 to 28/36 correct,
+    and type accuracy is unchanged.
+- **Extraction**:
+  - Totals are now paired with any percentage on the page that agrees with them.
+  - A total and percentage that disagree are lowered to review confidence instead of raising a tampering flag.
+  - Words such as "SURNAME" and "CERTIFY" are no longer accepted as names.
+  - Held-out accuracy went from 87% to 88%.
+- **Rules**:
+  - A degree certificate also satisfies "provisional".
+  - The middle (father's) name may be missing.
+  - Diploma holders who joined in the second year (lateral entry) don't need semester 1–2 sheets.
+  - Re-uploading the latest semester sheet in the degree slots is allowed for applicants awaiting results.
+  - A CGPA from an earlier semester is not used as the final one.
+
+Result: 53 students clear, 29 to review, 0 with errors. No file or ID number appears for two applicants.
+
+### Background pipeline test (Phase 10, 2026-10-22)
+
+Run end to end on a throwaway copy of the database with the real worker, Tesseract and PaddleOCR:
+
+- **Through the browser:** a marksheet image drawn in the page, uploaded with the review screen. It moved through
+  every stage live and its values were outlined on the page.
+- **Through the API:** a real 815 KB, one-page 12th marksheet:
+  - The quality verdict was available about 2.7 s after the upload, and processing finished at 13.7 s.
+  - It was recognised as a 12th marksheet (0.9), and the name, mother's name, seat number and result were read.
+- **Finding:** the extractor had been rewriting a printed name towards the form's spelling even when the names only
+  partly matched, so "ASHA" on another person's page became the applicant's "AASTHA". Spellings are now corrected
+  only when every form word is found, and otherwise the name is kept exactly as printed. One tuning-set name became
+  a miss (34 → 33/39); the held-out score is unchanged.
+
+### Learning loop: page-type model (Phase 13, 2026-10-22)
+
+- **Training data:** no verifier corrections existed yet, so the model learned from the 829 pages the rules typed by an
+  exact title. The 80 hand-labelled pages were kept out of training to measure it.
+- **Model:** TF-IDF of words and word pairs, with logistic regression.
+
+| | Rules alone | Model alone (on its training-free hand labels) | Rules + model |
+|---|---|---|---|
+| Hand-labelled pages correct | 77/80 | 79/80 (75/75 where >= 0.6 sure) | **80/80** |
+| Pages nobody could type | 15 | – | 4 |
+
+Every page whose type the model changed was checked by eye or is hand-labelled:
+- **Pages the rules could not type, model at least 60% sure:** 8 of 8 correct. Below 60%, 2 of 5 were correct, so
+  those stay with a person.
+- **Model at least 80% sure, overruling a guess from the previous page or the upload slot:** 5 of 5 correct (four
+  Mumbai passing certificates and a Pune University degree certificate that the fallbacks had called semester
+  marksheets).
+- **A 0.60 guess overruling the back of a degree certificate was wrong.** The model may therefore overrule a
+  "previous page" guess only when it is at least 80% sure.
+- **Net effect:** 17 pages got a different type, all correct. One real problem surfaced: a 10th marksheet uploaded in
+  the 12th/Diploma slot, with no 12th anywhere, which had previously been reported only as "could not recognise".
+
+### Readability check: text read well enough to trust? (2026-10-22)
+
+A sharp photo can pass the image quality check and still be misread. A student's photo of a faint dot-matrix
+marksheet scored well on sharpness (238), contrast (173) and size (845 px), and PaddleOCR said it was 78% confident.
+Yet it read the name "GADHE POOJA DEEPAKRAO" as "CANHE PONOJA DEEPAIORAt", the seat number as "IAG100N" and the
+total 536 as 516. The page's own seed copy behaves the same way.
+
+**Signals, measured on the 956 seed academic pages read by PaddleOCR:**
+- **Share of the page's text on lines read with less than 80% confidence.** The seed median is 6%; that photo had 49%,
+  and only 17 seed pages were as bad.
+- **Confidence of the line holding each key value.** Correctly read names (hand labels) all score 84 or more; 90%
+  score 93.5 or more. Misread names scored 75–86.
+- On labelled pages, values on lines below 85 were wrong **4 of 10** times; values on better lines, 14 of 188 (7%).
+- Stray Chinese characters appear on 61% of seed pages (seals, logos), so they are not used as a signal.
+
+**Rules** (`app/extract/readability.py`):
+- **Clearer copy needed:** 80% or more of the text is weak, or no text was read.
+- **Ask the student:** a key value (name, one ID, one grade) sits on a line below 85, or a required one is missing
+  on a page that is 35%+ weak. The student types it without seeing what was read.
+- **Not asked when something independent agrees:**
+  - the name contains every word of the applicant's form name;
+  - Tesseract read exactly the same value.
+- **Two failed tries:** the page needs a clearer copy.
+- **While unsure:** a doubted name is not compared with the form, so a misread name is never reported as someone
+  else's document.
+
+**Checking typed values against the page** (59 labelled names, 73 labelled IDs; other applicants' values as
+impostors):
+
+| | Right value accepted | Someone else's value accepted |
+|---|---|---|
+| Name (each word ≥ 0.5 alike, average ≥ 0.75) | 58/59 | **0 / 4,799** (1 at 0.70, 19 at 0.65) |
+| ID, exact or one OCR-damaged character | 64/73 | **0** (a one-digit tolerance accepted 20: seat numbers are consecutive) |
+| Marks and grades | exact only | – |
+
+A value that matched only approximately, or was marked "not printed", is flagged for the verifier to check against
+the image.
+
+**Effect on the seed data:**
+- **Pages:** 884 clear, 65 ask for values (7%), 7 need a clearer copy (checked by eye: e.g. a blurry photo of a
+  multi-student result ledger).
+- **Values asked:** SGPA 19, name 19, seat number 11, PRN 11, total 10, CGPA 5, percentage 2.
+- **Students affected:** 32 of 83 would be asked something, mostly about one grade on one page.
+- **Spot check of 4 asked pages:**
+  - Asking caught a real error: a clean grade card where the extractor had taken the previous semester's SGPA
+    (8.80 instead of 7.55).
+  - It caught a garbled name and seat number.
+  - It asked needlessly once: the total itself was read at 100%, but its label was weak.
+- **End-to-end on the real photo:**
+  - The registration number typed by the student matched.
+  - The name did not (average 0.7499).
+  - After the second try the student was asked for a clearer copy.
+  - The verifier saw "Text could not be read" rather than a name mismatch.
+
+### Processing time for 500+ students (2026-10-22)
+
+**Where the time goes.** Measured on 26 real pages (6 documents) on the i7-1165G7 laptop:
+
+| Step | Share of the time |
+|---|---|
+| Tesseract (rotation search + full read) | 47% |
+| PaddleOCR read | 51% |
+| Classify, extract, readability check, validate | 2% (the readability check itself: under 1 ms) |
+
+Stored averages are 3.4 s per page for Tesseract and 4.6 s for PaddleOCR, about 8 s per page in all. For 500 students
+with about 11 pages each (5,500 pages), that is about 12 hours on one worker.
+
+**What helped and what did not:**
+
+| Change | Result | Kept? |
+|---|---|---|
+| Tesseract OSD for rotation, trusted at confidence >= 2, else the full search | ~1 s instead of 3-7 s. Never wrong on the 40 labelled pages at that confidence; 76/77 agreeing with the search on a wider sample | **Kept** |
+| Tesseract full read only when needed: the search needed it anyway, PaddleOCR failed, or a value is in doubt (second opinion, ~7% of pages) | 40 real pages (10 rotated) reprocessed: same rotation and identical text on 40/40 | **Kept** |
+| The two changes above, timed back to back on 20 pages (5 rotated), alternating order | 9.7 s → 8.1 s per page (-17%). PaddleOCR is now ~80% of the time | – |
+| PaddleOCR on smaller images (1600 px long side instead of 2500) | -24% time, but one page kept only 44% of its text | Rejected |
+| Two PaddleOCR workers side by side | -21%: PaddleOCR already uses every core | Not worth it on 8 threads / 15 GB |
+| oneDNN (Intel CPU acceleration) in Paddle 3.3.1 | Crashes (`ConvertPirAttribute2RuntimeAttribute`), also with the PIR flags off | See below |
+| Paddle 3.2.2 with oneDNN (trial environment) | 2.49 s per page on 99 real pages (the labelled pages plus 40 others), against 4.6–7.6 s. Text identical on the median page, at least 98.6% the same on every page. Field extraction exactly as before: tuning 150/179 (84%), held-out 80/91 (88%), high-confidence 91/95 and 44/45. Memory: 1.2 GB per worker instead of 0.7 GB | Recommended |
+| Whole reading path, back to back on 20 pages | Today 9.7 s per page; with OSD and Paddle 3.2.2 + oneDNN, **5.0 s per page**. 5,500 pages: about 15 h → **about 7.5 h** on this laptop | – |
+
+**Workflow change.** Each upload is now a quick check job (render + picture quality, highest priority) followed by a
+read job. A student hears about a blurry or small photo within seconds even when hundreds of documents are waiting to
+be read. `make check-worker` runs the checks in a separate light process (no OCR engines loaded).
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and

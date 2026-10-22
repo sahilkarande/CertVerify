@@ -13,6 +13,7 @@ class UserRole(StrEnum):
 class DocumentCategory(StrEnum):
     ACADEMIC_RECORD = "academic_record"  # marksheets, certificates: OCR + extraction
     IDENTITY_IMAGE = "identity_image"  # photo, signature: stored and displayed, not OCR'd
+    SUPPORTING = "supporting"  # back sides, instruction pages: kept, not verified
 
 
 class ApplicantSource(StrEnum):
@@ -25,6 +26,7 @@ class SubmissionStatus(StrEnum):
     SUBMITTED = "submitted"
     PROCESSING = "processing"
     NEEDS_REVIEW = "needs_review"
+    CHANGES_REQUESTED = "changes_requested"  # sent back to the student with a message
     VERIFIED = "verified"
     REJECTED = "rejected"
 
@@ -39,6 +41,16 @@ class DocumentStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class Readability(StrEnum):
+    """Whether the text OCR read from a page is trustworthy (images can pass the quality
+    check and still be misread, e.g. faint dot-matrix print)."""
+
+    CLEAR = "clear"
+    CONFIRM = "confirm"  # unsure: the student is asked to type the key values
+    CONFIRMED = "confirmed"  # the student's values matched what was read
+    RETAKE = "retake"  # too poorly read (or values did not match): a clearer copy is needed
+
+
 class QualityVerdict(StrEnum):
     OK = "ok"
     WARN = "warn"  # usable, but a reviewer should know (e.g. low resolution)
@@ -46,9 +58,33 @@ class QualityVerdict(StrEnum):
     BLANK = "blank"  # no content (e.g. back side of a certificate)
 
 
+class OcrStatus(StrEnum):
+    OK = "ok"
+    LOW_CONFIDENCE = "low_confidence"  # read, but a reviewer should check it
+    NO_TEXT = "no_text"  # nothing readable found
+    FAILED = "failed"  # engine error
+
+
+class ClassificationMethod(StrEnum):
+    CONTENT_EXACT = "content_exact"  # an exact title/keyword pattern matched
+    CONTENT_FUZZY = "content_fuzzy"  # an OCR-damaged title matched approximately
+    CONTINUATION = "continuation"  # unreadable later page: same type as the page before
+    SLOT_HINT = "slot_hint"  # unreadable page in a slot that accepts only one type
+    MODEL = "model"  # suggested by the trained page-type model (always reviewed)
+    PHRASE = "phrase"  # a title phrase an admin defined for a document type
+    HUMAN = "human"  # set by a verifier; never overwritten by re-classification
+
+
+class AcademicLevel(StrEnum):
+    SCHOOL = "school"
+    UG = "ug"
+    PG = "pg"
+
+
 class FieldSource(StrEnum):
     MACHINE = "machine"
-    HUMAN = "human"
+    HUMAN = "human"  # a verifier's correction
+    STUDENT = "student"  # typed by the student and matched against what OCR read
 
 
 class IssueSeverity(StrEnum):
@@ -67,3 +103,22 @@ class IssueStatus(StrEnum):
     OPEN = "open"
     RESOLVED = "resolved"
     DISMISSED = "dismissed"
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class JobStage(StrEnum):
+    """Where a document is in the processing pipeline (shown to the uploader)."""
+
+    WAITING = "waiting"
+    QUALITY = "quality"  # opening the file, rendering pages, quality checks
+    READING = "reading"  # OCR
+    CLASSIFYING = "classifying"
+    EXTRACTING = "extracting"
+    VALIDATING = "validating"
+    DONE = "done"
