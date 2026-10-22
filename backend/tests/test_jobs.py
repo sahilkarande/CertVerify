@@ -14,10 +14,14 @@ from app.db.base import utcnow
 from app.db.session import Database
 from app.jobs.pipeline import Engines
 from app.jobs.queue import (
+    CHECK_DOCUMENT,
+    CHECK_PRIORITY,
     LEASE,
+    READ_DOCUMENT,
     UPLOAD_PRIORITY,
     claim,
     enqueue_document,
+    enqueue_upload,
     fail,
     finish,
     latest_job,
@@ -34,7 +38,7 @@ from app.models import (
     PageOcr,
     ValidationIssue,
 )
-from app.models.enums import DocumentStatus, JobStage, JobStatus, UserRole
+from app.models.enums import DocumentStatus, JobStage, JobStatus, Readability, UserRole
 from app.ocr.engine import OcrResult, Word
 from app.seeds.document_types import seed_document_types
 from app.storage import EncryptedLocalStorage
@@ -53,16 +57,21 @@ LINES = [
 class ScriptedOcr:
     """Stands in for Tesseract/PaddleOCR: always 'reads' the same semester marksheet."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, osd=(0, 9.0), weak_lines=()) -> None:
         self.name, self.version, self.reads = name, "test", 0
+        self.osd = osd  # orientation answer (None: cannot tell)
+        self.weak_lines = set(weak_lines)  # line numbers read with low confidence
 
     def prepare(self, rgb):
         return rgb
 
+    def orientation(self, image):
+        return self.osd
+
     def read(self, image) -> OcrResult:
         self.reads += 1
         words = [
-            Word(w, 95, j * 60, i * 40, 50, 20, f"l{i}")
+            Word(w, 70 if i in self.weak_lines else 95, j * 60, i * 40, 50, 20, f"l{i}")
             for i, line in enumerate(LINES)
             for j, w in enumerate(line.split())
         ]
@@ -207,9 +216,9 @@ def test_finish(session: Session) -> None:
 # ---------- worker + pipeline ----------
 
 
-def _worker(database: Database, storage, reader=None) -> Worker:
-    engines = Engines(rotation=ScriptedOcr("tesseract"), reader=reader)
-    return Worker(database, storage, engines, "test-worker")
+def _worker(database: Database, storage, reader=None, tesseract=None, **kw) -> Worker:
+    engines = Engines(rotation=tesseract or ScriptedOcr("tesseract"), reader=reader)
+    return Worker(database, storage, engines, "test-worker", **kw)
 
 
 def test_worker_runs_every_step_for_a_document(
@@ -218,8 +227,8 @@ def test_worker_runs_every_step_for_a_document(
     doc = _doc(session, storage)
     job = enqueue_document(session, doc.id)
     session.commit()
-    reader = ScriptedOcr("paddle")
-    assert _worker(database, storage, reader).run_once() is True
+    reader, tesseract = ScriptedOcr("paddle"), ScriptedOcr("tesseract")
+    assert _worker(database, storage, reader, tesseract).run_once() is True
 
     session.expire_all()
     job = session.get(Job, job.id)
@@ -227,13 +236,83 @@ def test_worker_runs_every_step_for_a_document(
     doc = session.get(Document, doc.id)
     assert doc.status is DocumentStatus.PROCESSED and doc.page_count == 1
     engines = set(session.scalars(select(PageOcr.engine)))
-    assert engines == {"tesseract", "paddle"} and reader.reads == 1  # read once, upright
+    # Orientation was certain and the page read clearly: one read, by the main engine only.
+    assert engines == {"paddle"} and reader.reads == 1 and tesseract.reads == 0
     sem = session.scalar(select(DocumentType).where(DocumentType.code == "semester_marksheet"))
     assert doc.pages[0].detected_type_id == sem.id
     fields = {f.field_key: f.value for f in session.scalars(select(ExtractedField))}
     assert fields["sgpa"] == "8.72" and fields["candidate_name"] == "PATIL ASHA RAMESH"
     assert session.scalars(select(ValidationIssue)).all()  # e.g. other documents missing
     assert _worker(database, storage).run_once() is False  # queue empty
+
+
+def test_unsure_orientation_falls_back_to_the_rotation_search(
+    session: Session, database: Database, storage
+) -> None:
+    doc = _doc(session, storage)
+    enqueue_document(session, doc.id)
+    session.commit()
+    reader, tesseract = ScriptedOcr("paddle"), ScriptedOcr("tesseract", osd=(90, 0.5))
+    _worker(database, storage, reader, tesseract).run_once()
+    rows = {r.engine: r for r in session.scalars(select(PageOcr))}
+    assert tesseract.reads >= 1 and reader.reads == 1  # the search decided; paddle read once
+    assert rows["tesseract"].rotation == rows["paddle"].rotation == 0  # not OSD's unsure 90
+
+
+def test_a_failed_main_reading_falls_back_to_tesseract(
+    session: Session, database: Database, storage
+) -> None:
+    doc = _doc(session, storage)
+    enqueue_document(session, doc.id)
+    session.commit()
+    _worker(database, storage, Exploding("paddle")).run_once()
+    rows = {r.engine: r.status.value for r in session.scalars(select(PageOcr))}
+    assert rows == {"paddle": "failed", "tesseract": "ok"}
+    fields = {f.field_key for f in session.scalars(select(ExtractedField))}
+    assert "sgpa" in fields  # the page was still read
+
+
+def test_doubted_values_get_a_second_opinion(session: Session, database: Database, storage) -> None:
+    doc = _doc(session, storage)
+    enqueue_document(session, doc.id)
+    session.commit()
+    seat, sgpa = 2, len(LINES) - 1
+    reader, tesseract = ScriptedOcr("paddle", weak_lines=(seat, sgpa)), ScriptedOcr("tesseract")
+    _worker(database, storage, reader, tesseract).run_once()
+    assert tesseract.reads == 1  # only because values on weak lines were in doubt
+    page = session.get(Document, doc.id).pages[0]
+    assert page.readability_details["why"] == {}  # Tesseract read both exactly: nothing asked
+    assert page.readability is Readability.CLEAR
+
+
+def test_upload_checks_run_before_any_waiting_reads(
+    session: Session, database: Database, storage
+) -> None:
+    from app.services.files import store_file
+
+    backlog = _doc(session, storage)
+    enqueue_document(session, backlog.id, priority=UPLOAD_PRIORITY, kind=READ_DOCUMENT)
+    f = store_file(session, storage, jpeg(w=1200), mime_type="image/jpeg")
+    new = Document(submission_id=backlog.submission_id, file_id=f.id, slot_key="ssc")
+    session.add(new)
+    session.flush()
+    check = enqueue_upload(session, new.id)
+    session.commit()
+    checks_only = _worker(database, storage, kinds=(CHECK_DOCUMENT,))
+    assert checks_only.run_once() is True
+    session.expire_all()
+    assert session.get(Job, check.id).status is JobStatus.DONE
+    assert session.get(Document, new.id).page_count == 1  # pages and quality known already
+    assert checks_only.run_once() is False  # reads are not its job, however long they wait
+
+
+def test_a_new_upload_is_checked_before_older_reads(session: Session, storage) -> None:
+    doc = _doc(session, storage)
+    older = enqueue_document(session, doc.id, priority=UPLOAD_PRIORITY, kind=READ_DOCUMENT)
+    older.created_at = utcnow() - timedelta(hours=1)
+    newer = enqueue_upload(session, doc.id)
+    session.commit()
+    assert claim(session, "w").id == newer.id
 
 
 def test_unreadable_upload_finishes_with_an_issue_not_retries(
@@ -302,14 +381,18 @@ def test_upload_queues_processing_and_reports_status(
     status = client.get(f"{API}/documents/{doc_id}/status").json()
     assert status["job"]["stage"] == "waiting" and status["document_status"] == "uploaded"
     job = latest_job(session, Document.id.type.python_type(doc_id))
-    assert job.priority == UPLOAD_PRIORITY
+    assert (job.kind, job.priority) == (CHECK_DOCUMENT, CHECK_PRIORITY)
     event = session.scalar(select(AuditEvent).where(AuditEvent.action == "document.uploaded"))
     assert event.actor_user_id is not None and "my scan" not in str(event.details)
 
-    _worker(database, storage).run_once()
+    _worker(database, storage).run_once()  # the quick check: pages and their quality
+    status = client.get(f"{API}/documents/{doc_id}/status").json()
+    assert status["job"]["finished"] is False and [p["number"] for p in status["pages"]] == [1]
+    read = latest_job(session, Document.id.type.python_type(doc_id))
+    assert (read.kind, read.priority) == (READ_DOCUMENT, UPLOAD_PRIORITY)
+    _worker(database, storage).run_once()  # the read
     status = client.get(f"{API}/documents/{doc_id}/status").json()
     assert status["job"]["finished"] is True and status["job"]["stage"] == "done"
-    assert [p["number"] for p in status["pages"]] == [1]
 
 
 def test_upload_rejections(client: TestClient, signed_in: dict, monkeypatch) -> None:

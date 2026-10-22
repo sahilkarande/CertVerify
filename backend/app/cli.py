@@ -431,6 +431,31 @@ def cmd_extract(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_readability(args: argparse.Namespace) -> int:
+    """Judge how well each academic page's text was read (after extraction). Counts only."""
+    from app.extract.readability import assess_page, pages_needing_assessment
+    from app.models import DocumentPage
+
+    db = _database()
+    verdicts: Counter = Counter()
+    asked: Counter = Counter()
+    with db.session_factory() as session:
+        ids = pages_needing_assessment(session, force=args.force)
+        for n, page_id in enumerate(ids, start=1):
+            page = session.get(DocumentPage, page_id)
+            verdicts[str(assess_page(session, page))] += 1
+            asked.update(page.readability_details.get("ask", []))
+            if n % 200 == 0:
+                session.commit()
+        session.commit()
+    db.dispose()
+    print(
+        f"assessed: {len(ids)} pages | " + ", ".join(f"{k}={v}" for k, v in verdicts.most_common())
+    )
+    print("values to confirm: " + (", ".join(f"{k}={v}" for k, v in asked.most_common()) or "none"))
+    return 0
+
+
 def cmd_extract_eval(args: argparse.Namespace) -> int:
     from app.extract.evaluate import evaluate
 
@@ -915,6 +940,12 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("extract", help="Extract fields (names, IDs, marks) from classified pages")
     p.add_argument("--force", action="store_true", help="Re-extract even if up to date")
     p.set_defaults(func=cmd_extract)
+
+    p = sub.add_parser(
+        "readability", help="Judge how well extracted pages were read (who must confirm values)"
+    )
+    p.add_argument("--force", action="store_true", help="Re-assess even if up to date")
+    p.set_defaults(func=cmd_readability)
 
     p = sub.add_parser("extract-eval", help="Measure extraction against labelled pages")
     p.add_argument("--labels", default=None, help="Labels JSON (default: tuning + held-out)")

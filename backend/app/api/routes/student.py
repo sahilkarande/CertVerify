@@ -25,8 +25,9 @@ from app.api.routes.review import PRIVATE
 from app.auth import service, student
 from app.auth.ratelimit import RateLimiter
 from app.core.config import Settings
+from app.extract import readability
 from app.models import Document, DocumentPage, RequirementSet, Submission, User, UserSession
-from app.models.enums import SubmissionStatus, UserRole
+from app.models.enums import Readability, SubmissionStatus, UserRole
 from app.portal import application as appl
 from app.portal.uploads import add_document, read_capped, remove_document
 from app.review import actions, queries
@@ -41,6 +42,7 @@ Storage = Annotated[ObjectStorage, Depends(get_storage)]
 CODE_REQUESTS = RateLimiter(limit=10, window_s=900)  # per address
 CODE_GUESSES = RateLimiter(limit=20, window_s=900)
 STUDENT_UPLOADS = RateLimiter(limit=40, window_s=600)  # per student
+CONFIRMS = RateLimiter(limit=20, window_s=600)  # per student
 GENERIC = "If that email can receive codes, one is on its way. It works for 10 minutes."
 
 
@@ -240,6 +242,47 @@ def page_image(page_id: uuid.UUID, user: Student, db: DbSession, storage: Storag
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
     return Response(data, media_type="image/jpeg", headers=PRIVATE)
+
+
+class ConfirmIn(BaseModel):
+    # field key -> the value as printed, or null for "not printed on this page"
+    values: dict[str, Annotated[str, Field(max_length=200)] | None] = Field(max_length=10)
+
+
+@router.post("/pages/{page_id}/confirm")
+def confirm_page(page_id: uuid.UUID, body: ConfirmIn, user: Student, db: DbSession) -> dict:
+    """The student types the values we could not read clearly; they are kept only if they
+    match the page (see app/extract/readability.py)."""
+    page = db.get(DocumentPage, page_id)
+    if page is None or page.document.submission.applicant.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
+    sub = page.document.submission
+    _editable(sub)
+    if page.readability != Readability.CONFIRM:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This page does not need any details now.")
+    if not CONFIRMS.hit(str(user.id)):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "Too many tries. Wait a few minutes."
+        )
+    try:
+        result = readability.confirm_page(db, page, body.values)
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            'Fill in every value as printed, or tick "not printed on this page".',
+        ) from exc
+    record_event(
+        db,
+        action="page.values_confirmed" if not result.mismatched else "page.values_mismatched",
+        entity_type="document_page",
+        entity_id=page.id,
+        actor_user_id=user.id,
+        institution_id=sub.applicant.institution_id,
+        details={"fields": sorted(body.values), "mismatched": result.mismatched},  # keys only
+    )
+    validate_submission(db, sub)
+    db.commit()
+    return appl.application_json(db, sub)
 
 
 @router.post("/applications/{intake_id}/submit")

@@ -41,6 +41,16 @@ class DocumentStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class Readability(StrEnum):
+    """Whether the text OCR read from a page is trustworthy (images can pass the quality
+    check and still be misread, e.g. faint dot-matrix print)."""
+
+    CLEAR = "clear"
+    CONFIRM = "confirm"  # unsure: the student is asked to type the key values
+    CONFIRMED = "confirmed"  # the student's values matched what was read
+    RETAKE = "retake"  # too poorly read (or values did not match): a clearer copy is needed
+
+
 class QualityVerdict(StrEnum):
     OK = "ok"
     WARN = "warn"  # usable, but a reviewer should know (e.g. low resolution)
@@ -73,7 +83,8 @@ class AcademicLevel(StrEnum):
 
 class FieldSource(StrEnum):
     MACHINE = "machine"
-    HUMAN = "human"
+    HUMAN = "human"  # a verifier's correction
+    STUDENT = "student"  # typed by the student and matched against what OCR read
 
 
 class IssueSeverity(StrEnum):

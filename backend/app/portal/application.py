@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.base import iso_utc
+from app.extract.readability import ID_KEYS, MAX_ATTEMPTS, NAME
 from app.intake.quality import MESSAGES as QUALITY_MESSAGES
 from app.jobs.queue import latest_job
 from app.models import (
@@ -33,6 +34,7 @@ from app.models.enums import (
     IssueStatus,
     JobStatus,
     QualityVerdict,
+    Readability,
     SubmissionStatus,
 )
 from app.review.actions import messages_json
@@ -63,6 +65,10 @@ STUDENT_MESSAGES = {
     "document_unreadable": "This file could not be opened. Please upload it again.",
     "page_quality_poor": "Some pages are hard to read (page {pages}). Please upload a clearer "
     "scan or photo.",
+    "page_needs_confirmation": "We could not read some details clearly (page {pages}). Type them "
+    "below exactly as printed, or upload a clearer copy.",
+    "page_text_unreadable": "We could not read the text clearly (page {pages}). Please upload a "
+    "clearer scan or photo: the whole page, flat, in good light, filling the picture.",
     "semester_marksheets_missing": "Some semester marksheets seem to be missing: we found "
     "{covered} for results up to semester {highest}.",
     "name_mismatch": "The name on this document does not match your application. Check that you "
@@ -166,7 +172,23 @@ def _issue_text(issue: ValidationIssue) -> str | None:
     )
 
 
-def _document_json(db: Session, doc: Document, codes: dict) -> dict:
+def _confirm_json(p, labels: dict[str, str]) -> dict | None:
+    """What a CONFIRM page asks the student (never what the machine read: they type it)."""
+    if p.readability != Readability.CONFIRM:
+        return None
+    d = p.readability_details or {}
+    kind = {NAME: "name", **dict.fromkeys(ID_KEYS, "id")}
+    return {
+        "fields": [
+            {"key": k, "label": labels.get(k, k.replace("_", " ")), "kind": kind.get(k, "number")}
+            for k in d.get("ask", [])
+        ],
+        "mismatched": [labels.get(k, k) for k in d.get("mismatched", [])],
+        "attempts_left": max(0, MAX_ATTEMPTS - int(d.get("attempts", 0))),
+    }
+
+
+def _document_json(db: Session, doc: Document, codes: dict, labels: dict) -> dict:
     job = latest_job(db, doc.id)
     processing = job is not None and job.status not in (JobStatus.DONE, JobStatus.FAILED)
     pages = sorted(doc.pages, key=lambda p: p.page_number)
@@ -187,6 +209,8 @@ def _document_json(db: Session, doc: Document, codes: dict) -> dict:
                     QUALITY_MESSAGES[r] for r in p.quality_reasons if r in QUALITY_MESSAGES
                 ],
                 "has_image": p.image_file_id is not None,
+                "text_unreadable": p.readability == Readability.RETAKE,
+                "confirm": _confirm_json(p, labels.get(p.detected_type_id, {})),
             }
             for p in pages
         ],
@@ -196,6 +220,10 @@ def _document_json(db: Session, doc: Document, codes: dict) -> dict:
 def application_json(db: Session, sub: Submission) -> dict:
     codes = dict(db.execute(select(DocumentType.id, DocumentType.code)).all())
     names = dict(db.execute(select(DocumentType.code, DocumentType.name)).all())
+    labels = {
+        tid: {f["key"]: f["label"] for f in schema}
+        for tid, schema in db.execute(select(DocumentType.id, DocumentType.field_schema))
+    }
     items = db.scalars(
         select(RequirementItem)
         .where(RequirementItem.requirement_set_id == sub.requirement_set_id)
@@ -226,17 +254,16 @@ def application_json(db: Session, sub: Submission) -> dict:
 
     checklist = []
     for it in items:
-        mine = [_document_json(db, d, codes) for d in docs if d.slot_key == it.key]
+        mine = [_document_json(db, d, codes, labels) for d in docs if d.slot_key == it.key]
         problems = by_item.get(it.key, [])
+        retake = any(p["quality"] == QualityVerdict.RETAKE.value for d in mine for p in d["pages"])
         if not mine:
             state = "missing"
+        elif retake:
+            state = "attention"  # known from the quick check: no need to wait for the read
         elif any(d["processing"] for d in mine):
             state = "processing"
-        elif (
-            problems
-            or any(d["failed"] for d in mine)
-            or any(p["quality"] == QualityVerdict.RETAKE.value for d in mine for p in d["pages"])
-        ):
+        elif problems or any(d["failed"] for d in mine):
             state = "attention"
         else:
             state = "ok"

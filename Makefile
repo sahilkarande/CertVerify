@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run run-lan test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user worker enqueue queue-status corrections-report export-corrections train-classifier models activate-model
+.PHONY: setup run run-lan test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract readability extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user worker check-worker enqueue queue-status corrections-report export-corrections train-classifier models activate-model
 
 setup:
 	python3 -m venv $(VENV)
@@ -101,6 +101,10 @@ classification-report:
 extract:
 	cd backend && .venv/bin/python -m app.cli extract $(if $(force),--force)
 
+# Which pages were read too poorly to trust (students are asked to confirm values)
+readability:
+	cd backend && .venv/bin/python -m app.cli readability $(if $(force),--force)
+
 # Score against labelled pages: tuning set + held-out set (backend/data/ocr_eval/)
 extract-eval:
 	cd backend && .venv/bin/python -m app.cli extract-eval
@@ -156,6 +160,11 @@ enable-user:
 # Run alongside `make run`; Ctrl+C finishes the current document, then stops.
 worker:
 	cd backend && .venv/bin/python -m app.jobs.worker
+
+# Optional second worker for the quick upload checks only (no OCR loaded, little memory):
+# students hear about blurry photos at once even while the main worker reads a backlog.
+check-worker:
+	cd backend && .venv/bin/python -m app.jobs.worker --checks-only
 
 # Queue documents for the worker: out-of-date ones, or everything with all=1
 enqueue:

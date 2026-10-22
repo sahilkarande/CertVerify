@@ -2,7 +2,10 @@
 
 Tesseract's own orientation detection (OSD) was right on only 28/40 labelled pages (it skips
 short certificates and misreads dot-matrix sheets). Reading the page at each candidate
-rotation and keeping the most confident result was right on 40/40, so that is used instead.
+rotation and keeping the most confident result was right on 40/40, but costs up to four full
+reads. So OSD is trusted only when it is sure (confidence >= 2: never wrong on the 40
+labelled pages, 76/77 agreeing with the search on a wider sample, ~1 s instead of 3-7 s) and
+the search runs otherwise (see ``decide_rotation``).
 """
 
 import io
@@ -17,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Document, DocumentPage, PageOcr
 from app.models.enums import OcrStatus, QualityVerdict
-from app.ocr.engine import OcrEngine, OcrResult
+from app.ocr.engine import OcrEngine, OcrResult, TesseractEngine
 from app.ocr.preprocess import rotate
 from app.services.files import read_file
 from app.storage import ObjectStorage
@@ -31,6 +34,9 @@ OCR_PIPELINE_VERSION = 1
 UPRIGHT_CONFIDENCE = 70.0
 UPRIGHT_MIN_WORDS = 40
 CANDIDATE_ROTATIONS = (90, 270, 180)
+
+# OSD answers below this confidence were often wrong; then the rotation search decides.
+OSD_MIN_CONFIDENCE = 2.0
 
 # When a page has been read by several engines, later steps use the first available here
 # (PaddleOCR read 90% of labelled numbers vs Tesseract's 53%, see docs/DATA_ANALYSIS.md).
@@ -67,6 +73,16 @@ def read_page(engine: OcrEngine, rgb: np.ndarray, rotation: int | None = None) -
     return _judge(best_rot, best)
 
 
+def decide_rotation(engine: TesseractEngine, rgb: np.ndarray) -> tuple[int, PageReading | None]:
+    """The page's rotation: from OSD when it is sure, else from the full rotation search.
+    Returns the search's reading too (when one was needed) so it is stored, not wasted."""
+    osd = engine.orientation(engine.prepare(rgb))
+    if osd is not None and osd[1] >= OSD_MIN_CONFIDENCE:
+        return osd[0], None
+    reading = read_page(engine, rgb)
+    return reading.rotation, reading
+
+
 def _judge(rotation: int, best: OcrResult) -> PageReading:
     if len(best.words) <= NO_TEXT_MAX_WORDS:
         status = OcrStatus.NO_TEXT
@@ -90,6 +106,28 @@ def ocr_page(
     With ``rotation_engine``, the page rotation comes from that engine (its stored reading,
     or a fresh one) and ``engine`` reads the page only once, already upright.
     """
+    started = time.perf_counter()
+    try:
+        rgb = load_rgb(storage, page)
+        rotation = given_rotation(db, page.id, rgb, rotation_engine)
+        reading: PageReading | Exception = read_page(engine, rgb, rotation)
+    except Exception as exc:  # engine crash/timeout: record it, keep going with other pages
+        reading = exc
+    return save_reading(db, page, engine, reading, started)
+
+
+def load_rgb(storage: ObjectStorage, page: DocumentPage) -> np.ndarray:
+    return np.asarray(Image.open(io.BytesIO(read_file(storage, page.image_file))).convert("RGB"))
+
+
+def save_reading(
+    db: Session,
+    page: DocumentPage,
+    engine: OcrEngine,
+    reading: "PageReading | Exception",
+    started: float,
+) -> PageOcr:
+    """Upsert the page's PageOcr row for ``engine`` (an exception is stored as FAILED)."""
     row = db.scalar(
         select(PageOcr).where(PageOcr.page_id == page.id, PageOcr.engine == engine.name)
     )
@@ -98,14 +136,8 @@ def ocr_page(
         db.add(row)
     row.engine_version = engine.version
     row.pipeline_version = OCR_PIPELINE_VERSION
-
-    started = time.perf_counter()
-    try:
-        rgb = np.asarray(Image.open(io.BytesIO(read_file(storage, page.image_file))).convert("RGB"))
-        rotation = given_rotation(db, page.id, rgb, rotation_engine)
-        reading = read_page(engine, rgb, rotation)
-    except Exception as exc:  # engine crash/timeout: record it, keep going with other pages
-        logger.warning("OCR failed for page %s: %s", page.id, type(exc).__name__)
+    if isinstance(reading, Exception):
+        logger.warning("OCR failed for page %s: %s", page.id, type(reading).__name__)
         row.status, row.rotation = OcrStatus.FAILED, 0
         row.mean_confidence, row.word_count, row.text, row.words = None, 0, "", []
     else:
@@ -122,6 +154,65 @@ def ocr_page(
     row.timing_ms = round((time.perf_counter() - started) * 1000)
     db.flush()
     return row
+
+
+def read_new_page(
+    db: Session,
+    storage: ObjectStorage,
+    tesseract: TesseractEngine,
+    reader: OcrEngine | None,
+    page: DocumentPage,
+) -> None:
+    """The worker's path for an uploaded page (caller commits): rotation from OSD when it is
+    sure, then one read by the main engine. Tesseract reads the whole page only when the
+    rotation search needed it anyway, when there is no other engine, or when the main
+    engine fails; ``second_opinion`` adds its reading later where a value is in doubt."""
+    started = time.perf_counter()
+    try:
+        rgb = load_rgb(storage, page)
+        rotation, searched = decide_rotation(tesseract, rgb)
+    except Exception as exc:
+        save_reading(db, page, tesseract, exc, started)
+        return
+    if searched is not None:
+        save_reading(db, page, tesseract, searched, started)
+    main = reader if reader is not None else tesseract
+    if main is tesseract and searched is not None:
+        return
+    started = time.perf_counter()
+    try:
+        reading: PageReading | Exception = read_page(main, rgb, rotation)
+    except Exception as exc:
+        reading = exc
+    row = save_reading(db, page, main, reading, started)
+    if row.status == OcrStatus.FAILED and main is not tesseract and searched is None:
+        started = time.perf_counter()
+        try:
+            fallback: PageReading | Exception = read_page(tesseract, rgb, rotation)
+        except Exception as exc:
+            fallback = exc
+        save_reading(db, page, tesseract, fallback, started)
+
+
+def second_opinion(
+    db: Session, storage: ObjectStorage, tesseract: TesseractEngine, page: DocumentPage
+) -> bool:
+    """Read the page with Tesseract too, upright as the main engine read it (caller commits).
+    Returns False when it already has a Tesseract reading."""
+    if db.scalar(
+        select(PageOcr.id).where(PageOcr.page_id == page.id, PageOcr.engine == tesseract.name)
+    ):
+        return False
+    main = preferred_readings(db, [page.id]).get(page.id)
+    started = time.perf_counter()
+    try:
+        reading: PageReading | Exception = read_page(
+            tesseract, load_rgb(storage, page), main.rotation if main else None
+        )
+    except Exception as exc:
+        reading = exc
+    save_reading(db, page, tesseract, reading, started)
+    return True
 
 
 def given_rotation(db: Session, page_id, rgb: np.ndarray, rotation_engine: OcrEngine | None):

@@ -1,0 +1,144 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Home Not Found</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+    margin: 0;
+    min-height: 100vh;
+    background: #202124;
+    color: #bdc1c6;
+    font-family: Arial, Helvetica, sans-serif;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 40px 24px;
+    }
+
+    .error-page {
+      width: 100%;
+      max-width: 650px;
+    }
+
+    /* Chrome-style broken document icon */
+    .icon-generic {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 42px;
+    }
+
+    .icon-generic::before {
+      content: "";
+      display: block;
+      width: 48px;
+      height: 48px;
+
+      background-image: image-set(
+        url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABIAQMAAABvIyEEAAAABlBMVEUAAABTU1OoaSf/AAAAAXRSTlMAQObYZgAAAENJREFUeF7tzbEJACEQRNGBLeAasBCza2lLEGx0CxFGG9hBMDDxRy/72O9FMnIFapGylsu1fgoBdkXfUHLrQgdfrlJN1BdYBjQQm3UAAAAASUVORK5CYII=") 1x,
+        url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJAAAACQAQMAAADdiHD7AAAABlBMVEUAAABTU1OoaSf/AAAAAXRSTlMAQObYZgAAAFJJREFUeF7t0cENgDAMQ9FwYgxG6WjpaIzCCAxQxVggFuDiCvlLOeRdHR9yzjncHVoq3npu+wQUrUuJHylSTmBaespJyJQoObUeyxDQb3bEm5Au81c0pSCD8HYAAAAASUVORK5CYII=") 2x
+      );
+
+      background-size: contain;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+
+    h1 {
+      margin: 0 0 24px;
+      font-size: 28px;
+      font-weight: 400;
+      line-height: 1.3;
+      color: #bdc1c6;
+    }
+
+    p {
+      margin: 0 0 12px;
+      font-size: 16px;
+      line-height: 1.6;
+      color: #9aa0a6;
+    }
+
+    .error-code {
+      margin-top: 28px;
+      font-size: 13px;
+      color: #9aa0a6;
+    }
+
+    .reload {
+      margin-top: 68px;
+      padding: 11px 24px;
+
+      border: none;
+      border-radius: 24px;
+
+      background: #8ab4f8;
+      color: #202124;
+
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .reload:hover {
+      background: #aecbfa;
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 90px 6%;
+      }
+
+      h1 {
+        font-size: 25px;
+      }
+
+      p {
+        font-size: 15px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="error-page">
+
+    <div class="icon-generic" aria-hidden="true"></div>
+
+    <h1>Home not found</h1>
+
+    <p>
+      The home you were searching for is either lost
+      or mismatched from your identity.
+    </p>
+
+    <p>
+      The destination may no longer exist, or you may
+      not be recognized as belonging there.
+    </p>
+
+    <div class="error-code">
+      ERR_HOME_NOT_FOUND
+    </div>
+
+    <button
+      class="reload"
+      type="button"
+      onclick="window.location.reload()"
+    >
+      Reload
+    </button>
+
+  </main>
+</body>
+</html>

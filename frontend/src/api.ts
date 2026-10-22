@@ -29,7 +29,7 @@ export interface Field {
   value: string | null;
   machine_value: string | null;
   confidence: number | null;
-  source: "machine" | "human";
+  source: "machine" | "human" | "student";
   box: Box | null;
 }
 
@@ -271,12 +271,21 @@ export interface Intake {
   institution: string;
 }
 
+export interface ConfirmField {
+  key: string;
+  label: string;
+  kind: "name" | "id" | "number";
+}
+
 export interface StudentPage {
   id: string;
   number: number;
   quality: string | null;
   problems: string[];
   has_image: boolean;
+  text_unreadable: boolean; // the checklist item's problems say what to do
+  // Values we could not read clearly: the student types them as printed (null = not printed).
+  confirm: { fields: ConfirmField[]; mismatched: string[]; attempts_left: number } | null;
 }
 
 export interface StudentDocument {
@@ -339,6 +348,8 @@ export const studentApi = {
   remove: (documentId: string) => request<void>("DELETE", `${SAPI}/documents/${documentId}`),
   submit: (intakeId: string) => request<Application>("POST", `${SAPI}/applications/${intakeId}/submit`),
   pageImageUrl: (pageId: string) => `${SAPI}/pages/${pageId}/image`,
+  confirmPage: (pageId: string, values: Record<string, string | null>) =>
+    request<Application>("POST", `${SAPI}/pages/${pageId}/confirm`, { values }),
   message: (intakeId: string, body: string) =>
     request<{ messages: Message[] }>("POST", `${SAPI}/applications/${intakeId}/messages`, { body }),
 };

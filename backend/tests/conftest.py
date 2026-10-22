@@ -57,7 +57,7 @@ def _reset_rate_limits() -> Iterator[None]:
     """Rate limiters are per process; keep tests independent."""
     from app.api.routes.auth import CODE_LIMIT, LOGIN_LIMIT
     from app.api.routes.documents import UPLOAD_LIMIT
-    from app.api.routes.student import CODE_GUESSES, CODE_REQUESTS, STUDENT_UPLOADS
+    from app.api.routes.student import CODE_GUESSES, CODE_REQUESTS, CONFIRMS, STUDENT_UPLOADS
 
     for limiter in (
         LOGIN_LIMIT,
@@ -66,6 +66,7 @@ def _reset_rate_limits() -> Iterator[None]:
         CODE_REQUESTS,
         CODE_GUESSES,
         STUDENT_UPLOADS,
+        CONFIRMS,
     ):
         limiter.reset()
     yield

@@ -227,7 +227,9 @@ def test_upload_delete_and_submit(
     assert ssc["state"] == "processing" and ssc["documents"][0]["id"] == first
 
     storage = EncryptedLocalStorage(test_settings.storage_dir, load_storage_key(test_settings))
-    Worker(database, storage, Engines(rotation=ScriptedOcr("tesseract")), "w").run_once()
+    worker = Worker(database, storage, Engines(rotation=ScriptedOcr("tesseract")), "w")
+    worker.run_once()  # the quick check
+    worker.run_once()  # the read
     status = student.get(f"{S}/documents/{first}/status").json()
     assert status["job"]["finished"] is True
     app = student.get(f"{S}/applications/{intake}").json()

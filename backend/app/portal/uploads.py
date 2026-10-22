@@ -12,7 +12,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.jobs.queue import UPLOAD_PRIORITY, enqueue_document
+from app.jobs.queue import enqueue_upload
 from app.models import Document, RequirementItem, StoredFile, Submission
 from app.models.enums import DocumentStatus
 from app.services.audit import record_event
@@ -89,7 +89,7 @@ def add_document(
     )
     db.add(doc)
     db.flush()
-    job = enqueue_document(db, doc.id, priority=UPLOAD_PRIORITY)
+    job = enqueue_upload(db, doc.id)
     record_event(
         db,
         action="document.uploaded",

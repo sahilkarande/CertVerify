@@ -299,6 +299,7 @@ def set_page_type(db: Session, user: User, page: DocumentPage, code: str) -> Doc
     if t is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown document type.")
     from app.extract.pipeline import extract_page_fields
+    from app.extract.readability import assess_page
     from app.models.enums import ClassificationMethod
 
     page.detected_type_id = t.id
@@ -308,6 +309,7 @@ def set_page_type(db: Session, user: User, page: DocumentPage, code: str) -> Doc
     sub = page.document.submission
     db.flush()
     extract_page_fields(db, page)  # the values to read depend on the type
+    assess_page(db, page)
     doc = page.document
     types = {p.detected_type_id for p in doc.pages}
     doc.detected_type_id = types.pop() if len(types) == 1 else None

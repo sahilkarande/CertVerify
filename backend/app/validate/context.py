@@ -13,7 +13,7 @@ from app.models import (
     StoredFile,
     Submission,
 )
-from app.models.enums import DocumentStatus, QualityVerdict
+from app.models.enums import DocumentStatus, QualityVerdict, Readability
 
 
 @dataclass
@@ -30,6 +30,8 @@ class PageInfo:
     semesters: list[int]
     quality: QualityVerdict | None
     fields: dict[str, FieldValue] = field(default_factory=dict)
+    readability: Readability | None = None
+    readability_details: dict = field(default_factory=dict)
 
     def get(self, key: str, min_conf: float = 0.0) -> str | None:
         f = self.fields.get(key)
@@ -94,6 +96,8 @@ def load_context(db: Session, submission: Submission) -> SubmissionContext:
                 list(p.semesters or []),
                 p.quality_verdict,
                 fields.get(p.id, {}),
+                p.readability,
+                dict(p.readability_details or {}),
             )  # fmt: skip
             for p in sorted(d.pages, key=lambda p: p.page_number)
         ]

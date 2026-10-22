@@ -3,7 +3,8 @@
 Fields are stored per page: one PDF may hold several semester marksheets, each with its own
 SGPA. Which fields a page gets comes from its document type's field schema (the registry),
 so a new type needs registry data, not code, as long as its fields are among the finders'.
-Human corrections are never touched: re-running replaces machine rows only.
+Human corrections and values the student confirmed are never touched: re-running replaces
+machine rows only.
 """
 
 from collections import Counter
@@ -54,7 +55,7 @@ def extract_page_fields(db: Session, page: DocumentPage) -> PageExtraction:
     corrected = set(
         db.scalars(
             select(ExtractedField.field_key).where(
-                ExtractedField.page_id == page.id, ExtractedField.source == FieldSource.HUMAN
+                ExtractedField.page_id == page.id, ExtractedField.source != FieldSource.MACHINE
             )
         )
     )

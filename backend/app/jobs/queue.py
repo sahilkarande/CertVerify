@@ -10,7 +10,14 @@ from app.db.base import utcnow
 from app.models import Job
 from app.models.enums import JobStage, JobStatus
 
-PROCESS_DOCUMENT = "process_document"
+# Job kinds. An upload is checked first (render + picture quality, seconds) with the highest
+# priority, so the student hears about a blurry photo even when hundreds of documents are
+# waiting to be read; the check then queues the read (OCR onwards, the slow part).
+PROCESS_DOCUMENT = "process_document"  # both, in one job (batch reprocessing)
+CHECK_DOCUMENT = "check_document"
+READ_DOCUMENT = "read_document"
+KINDS = (PROCESS_DOCUMENT, CHECK_DOCUMENT, READ_DOCUMENT)
+CHECK_PRIORITY = 0
 UPLOAD_PRIORITY = 10  # someone is waiting for it
 BACKFILL_PRIORITY = 100
 # A running job whose lease is not renewed within this time is taken over by another
@@ -20,12 +27,16 @@ RETRY_BACKOFF = (timedelta(seconds=30), timedelta(minutes=5), timedelta(minutes=
 
 
 def enqueue_document(
-    db: Session, document_id: uuid.UUID, *, priority: int = BACKFILL_PRIORITY
+    db: Session,
+    document_id: uuid.UUID,
+    *,
+    priority: int = BACKFILL_PRIORITY,
+    kind: str = PROCESS_DOCUMENT,
 ) -> Job:
-    """Queue processing of a document; reuses an already waiting job for it."""
+    """Queue processing of a document; reuses an already waiting job of that kind for it."""
     waiting = db.scalar(
         select(Job).where(
-            Job.kind == PROCESS_DOCUMENT,
+            Job.kind == kind,
             Job.document_id == document_id,
             Job.status == JobStatus.QUEUED,
         )
@@ -34,7 +45,7 @@ def enqueue_document(
         waiting.priority = min(waiting.priority, priority)
         return waiting
     job = Job(
-        kind=PROCESS_DOCUMENT,
+        kind=kind,
         document_id=document_id,
         priority=priority,
         status=JobStatus.QUEUED,
@@ -71,10 +82,17 @@ def try_claim(db: Session, job_id: uuid.UUID, worker_id: str) -> bool:
     return bool(won)
 
 
-def claim(db: Session, worker_id: str) -> Job | None:
-    """Take the next due job (or one whose worker's lease ran out)."""
+def enqueue_upload(db: Session, document_id: uuid.UUID) -> Job:
+    return enqueue_document(db, document_id, priority=CHECK_PRIORITY, kind=CHECK_DOCUMENT)
+
+
+def claim(db: Session, worker_id: str, kinds: tuple[str, ...] = KINDS) -> Job | None:
+    """Take the next due job of these kinds (or one whose worker's lease ran out)."""
     candidates = db.scalars(
-        select(Job.id).where(_claimable(utcnow())).order_by(Job.priority, Job.created_at).limit(5)
+        select(Job.id)
+        .where(_claimable(utcnow()), Job.kind.in_(kinds))
+        .order_by(Job.priority, Job.created_at)
+        .limit(5)
     ).all()
     for job_id in candidates:
         if try_claim(db, job_id, worker_id):

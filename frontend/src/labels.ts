@@ -47,6 +47,9 @@ export const ISSUE_TITLES: Record<string, string> = {
   claimed_percentage_unverified: "Claimed percentage not checked",
   document_unreadable: "File unreadable",
   page_quality_poor: "Poor page quality",
+  page_text_unreadable: "Text could not be read",
+  page_needs_confirmation: "Waiting for the student to confirm values",
+  student_confirmed_values: "Values typed by the student",
 };
 
 export const VERDICT_LABELS = { clear: "Clear", review: "Needs review", problems: "Problems" };

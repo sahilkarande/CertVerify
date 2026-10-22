@@ -394,6 +394,7 @@ function FieldRow({ f, hovered, onHover, reload }: {
     }
   };
   const human = f.source === "human";
+  const student = f.source === "student";
   return (
     <tr className={hovered === f.key ? "hot" : ""} onMouseEnter={() => onHover(f.key)} onMouseLeave={() => onHover(null)}>
       <th>{label(FIELD_LABELS, f.key)}</th>
@@ -409,9 +410,10 @@ function FieldRow({ f, hovered, onHover, reload }: {
             <button className="value value-button" title="Click to correct" onClick={() => setEditing(true)}>
               {f.value ?? "—"}
             </button>
-            {human && f.machine_value !== f.value && (
+            {(human || student) && f.machine_value !== f.value && (
               <span className="muted small"> (read as {f.machine_value ?? "nothing"})</span>
             )}
+            {student && <span className="muted small" title="Typed by the student and matched against the page"> · typed by student</span>}
           </>
         )}
         {error && <div className="error-text small">{error}</div>}

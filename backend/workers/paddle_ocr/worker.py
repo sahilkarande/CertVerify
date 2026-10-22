@@ -47,8 +47,9 @@ def main() -> int:
         use_doc_orientation_classify=False,
         use_doc_unwarping=False,
         use_textline_orientation=False,
-        # oneDNN crashes in paddlepaddle 3.3.1 (ConvertPirAttribute2RuntimeAttribute).
-        enable_mkldnn=False,
+        # oneDNN: ~3x faster on Intel CPUs. Needs paddlepaddle 3.2.x (3.3.1 crashes with
+        # ConvertPirAttribute2RuntimeAttribute); see requirements.txt.
+        enable_mkldnn=True,
     )
     if args.threads:
         kw["cpu_threads"] = args.threads

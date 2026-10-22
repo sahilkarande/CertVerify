@@ -10,8 +10,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from app.extract.fields import match_form_name
-from app.models.enums import DocumentStatus, IssueSeverity, QualityVerdict
-from app.validate.context import ID_FIELDS, DocInfo, SubmissionContext
+from app.models.enums import DocumentStatus, IssueSeverity, QualityVerdict, Readability
+from app.validate.context import ID_FIELDS, DocInfo, PageInfo, SubmissionContext
 
 ERROR, WARNING, INFO = IssueSeverity.ERROR, IssueSeverity.WARNING, IssueSeverity.INFO
 IDENTITY_SLOTS = {"photo", "signature"}
@@ -215,6 +215,8 @@ def name_matches_form(ctx: SubmissionContext) -> list[IssueDraft]:
     for d in ctx.documents:
         readings = []
         for p in d.pages:
+            if _name_unsettled(p):
+                continue
             if p.type_code in ACADEMIC and (printed := p.get("candidate_name")):
                 _, matched, total = match_form_name(printed, ctx.applicant_name)
                 if total:
@@ -235,6 +237,17 @@ def name_matches_form(ctx: SubmissionContext) -> list[IssueDraft]:
              "form_words_matched": f"{matched}/{total}"},
         ))  # fmt: skip
     return out
+
+
+def _name_unsettled(p: PageInfo) -> bool:
+    """A name the readability check doubts is not compared: a misread name is a reading
+    problem (handled by asking the student), not a mismatch hinting at someone else's
+    document."""
+    if p.readability == Readability.RETAKE:
+        return True
+    return p.readability == Readability.CONFIRM and "candidate_name" in (
+        p.readability_details.get("ask") or []
+    )
 
 
 def _first_and_surname(form_name: str, printed: str) -> bool:
@@ -352,6 +365,47 @@ def unreadable(ctx: SubmissionContext) -> list[IssueDraft]:
                 "Some pages are too blurry or small to read reliably; a clearer copy is needed.",
                 f"quality:{d.id}", d.id, {"pages": bad},
             ))  # fmt: skip
+        out.extend(_readability(d, bad))
+    return out
+
+
+def _readability(d: DocInfo, image_retake: list[int]) -> list[IssueDraft]:
+    """How well the text was read (app/extract/readability.py). Pages already asked to be
+    retaken for image quality are not reported twice."""
+    out = []
+    by = {}
+    for p in d.pages:
+        if p.number not in image_retake and p.readability:
+            by.setdefault(p.readability, []).append(p)
+    if pages := by.get(Readability.RETAKE):
+        out.append(IssueDraft(
+            "page_text_unreadable", WARNING,
+            "The text on some pages could not be read reliably (or the values the student "
+            "typed did not match it); a clearer copy is needed.",
+            f"readability_retake:{d.id}", d.id, {"pages": [p.number for p in pages]},
+        ))  # fmt: skip
+    if pages := by.get(Readability.CONFIRM):
+        out.append(IssueDraft(
+            "page_needs_confirmation", WARNING,
+            "Some values could not be read with confidence; waiting for the student to type "
+            "them as printed.",
+            f"readability_confirm:{d.id}", d.id,
+            {"pages": [p.number for p in pages],
+             "fields": sorted({k for p in pages for k in p.readability_details.get("ask", [])})},
+        ))  # fmt: skip
+    if pages := by.get(Readability.CONFIRMED):
+        loose = sorted({k for p in pages for k in (p.readability_details.get("inexact", [])
+                        + p.readability_details.get("not_printed", []))})  # fmt: skip
+        out.append(IssueDraft(
+            "student_confirmed_values", WARNING if loose else INFO,
+            "The student typed values the machine could not read clearly; they match the "
+            "page" + (" only approximately or were marked as not printed: check them against "
+                      "the image." if loose else "."),
+            f"readability_confirmed:{d.id}", d.id,
+            {"pages": [p.number for p in pages],
+             "fields": sorted({k for p in pages for k in p.readability_details.get("ask", [])}),
+             "check": loose},
+        ))  # fmt: skip
     return out
 
 

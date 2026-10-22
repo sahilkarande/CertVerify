@@ -1,5 +1,6 @@
 """OCR engines behind one interface, so a stronger engine can be swapped in later."""
 
+import re
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -76,6 +77,21 @@ class TesseractEngine:
         from app.ocr.preprocess import prepare
 
         return prepare(rgb)
+
+    def orientation(self, gray: np.ndarray) -> tuple[int, float] | None:
+        """Tesseract's fast orientation detection (OSD): (degrees to rotate clockwise to make
+        the page upright, confidence), or None when it cannot tell (e.g. too little text)."""
+        import pytesseract
+
+        try:
+            osd = pytesseract.image_to_osd(gray, config="--psm 0", timeout=self.timeout_s)
+        except (pytesseract.TesseractError, RuntimeError):
+            return None
+        rot = re.search(r"Rotate:\s*(\d+)", osd)
+        conf = re.search(r"Orientation confidence:\s*([\d.]+)", osd)
+        if not rot or not conf or int(rot.group(1)) not in (0, 90, 180, 270):
+            return None
+        return int(rot.group(1)), float(conf.group(1))
 
     def read(self, gray: np.ndarray) -> OcrResult:
         import pytesseract

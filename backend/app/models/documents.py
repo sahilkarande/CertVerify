@@ -22,6 +22,7 @@ from app.models.enums import (
     DocumentStatus,
     FieldSource,
     QualityVerdict,
+    Readability,
 )
 
 
@@ -120,6 +121,10 @@ class DocumentPage(IdMixin, TimestampMixin, Base):
     quality_verdict: Mapped[QualityVerdict | None] = mapped_column(str_enum(QualityVerdict))
     quality_reasons: Mapped[list[Any]] = mapped_column(default=list)  # e.g. ["blurry"]
     quality_metrics: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    # Text readability (app/extract/readability.py); None = not assessed (non-academic pages).
+    readability: Mapped[Readability | None] = mapped_column(str_enum(Readability))
+    # {"version", "weak_share", "ask": [field keys], "attempts", "mismatched": [field keys]}
+    readability_details: Mapped[dict[str, Any]] = mapped_column(default=dict, server_default="{}")
 
     document: Mapped[Document] = relationship(back_populates="pages")
     image_file: Mapped[StoredFile | None] = relationship()

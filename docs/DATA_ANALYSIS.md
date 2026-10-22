@@ -436,6 +436,90 @@ Every page whose type the model changed was checked by eye or is hand-labelled:
 - **Net effect:** 17 pages got a different type, all correct. One real problem surfaced: a 10th marksheet uploaded in
   the 12th/Diploma slot, with no 12th anywhere, which had previously been reported only as "could not recognise".
 
+### Readability check: text read well enough to trust? (2026-10-22)
+
+A sharp photo can pass the image quality check and still be misread. A student's photo of a faint dot-matrix
+marksheet scored well on sharpness (238), contrast (173) and size (845 px), and PaddleOCR said it was 78% confident.
+Yet it read the name "GADHE POOJA DEEPAKRAO" as "CANHE PONOJA DEEPAIORAt", the seat number as "IAG100N" and the
+total 536 as 516. The page's own seed copy behaves the same way.
+
+**Signals, measured on the 956 seed academic pages read by PaddleOCR:**
+- **Share of the page's text on lines read with less than 80% confidence.** The seed median is 6%; that photo had 49%,
+  and only 17 seed pages were as bad.
+- **Confidence of the line holding each key value.** Correctly read names (hand labels) all score 84 or more; 90%
+  score 93.5 or more. Misread names scored 75–86.
+- On labelled pages, values on lines below 85 were wrong **4 of 10** times; values on better lines, 14 of 188 (7%).
+- Stray Chinese characters appear on 61% of seed pages (seals, logos), so they are not used as a signal.
+
+**Rules** (`app/extract/readability.py`):
+- **Clearer copy needed:** 80% or more of the text is weak, or no text was read.
+- **Ask the student:** a key value (name, one ID, one grade) sits on a line below 85, or a required one is missing
+  on a page that is 35%+ weak. The student types it without seeing what was read.
+- **Not asked when something independent agrees:**
+  - the name contains every word of the applicant's form name;
+  - Tesseract read exactly the same value.
+- **Two failed tries:** the page needs a clearer copy.
+- **While unsure:** a doubted name is not compared with the form, so a misread name is never reported as someone
+  else's document.
+
+**Checking typed values against the page** (59 labelled names, 73 labelled IDs; other applicants' values as
+impostors):
+
+| | Right value accepted | Someone else's value accepted |
+|---|---|---|
+| Name (each word ≥ 0.5 alike, average ≥ 0.75) | 58/59 | **0 / 4,799** (1 at 0.70, 19 at 0.65) |
+| ID, exact or one OCR-damaged character | 64/73 | **0** (a one-digit tolerance accepted 20: seat numbers are consecutive) |
+| Marks and grades | exact only | – |
+
+A value that matched only approximately, or was marked "not printed", is flagged for the verifier to check against
+the image.
+
+**Effect on the seed data:**
+- **Pages:** 884 clear, 65 ask for values (7%), 7 need a clearer copy (checked by eye: e.g. a blurry photo of a
+  multi-student result ledger).
+- **Values asked:** SGPA 19, name 19, seat number 11, PRN 11, total 10, CGPA 5, percentage 2.
+- **Students affected:** 32 of 83 would be asked something, mostly about one grade on one page.
+- **Spot check of 4 asked pages:**
+  - Asking caught a real error: a clean grade card where the extractor had taken the previous semester's SGPA
+    (8.80 instead of 7.55).
+  - It caught a garbled name and seat number.
+  - It asked needlessly once: the total itself was read at 100%, but its label was weak.
+- **End-to-end on the real photo:**
+  - The registration number typed by the student matched.
+  - The name did not (average 0.7499).
+  - After the second try the student was asked for a clearer copy.
+  - The verifier saw "Text could not be read" rather than a name mismatch.
+
+### Processing time for 500+ students (2026-10-22)
+
+**Where the time goes.** Measured on 26 real pages (6 documents) on the i7-1165G7 laptop:
+
+| Step | Share of the time |
+|---|---|
+| Tesseract (rotation search + full read) | 47% |
+| PaddleOCR read | 51% |
+| Classify, extract, readability check, validate | 2% (the readability check itself: under 1 ms) |
+
+Stored averages are 3.4 s per page for Tesseract and 4.6 s for PaddleOCR, about 8 s per page in all. For 500 students
+with about 11 pages each (5,500 pages), that is about 12 hours on one worker.
+
+**What helped and what did not:**
+
+| Change | Result | Kept? |
+|---|---|---|
+| Tesseract OSD for rotation, trusted at confidence >= 2, else the full search | ~1 s instead of 3-7 s. Never wrong on the 40 labelled pages at that confidence; 76/77 agreeing with the search on a wider sample | **Kept** |
+| Tesseract full read only when needed: the search needed it anyway, PaddleOCR failed, or a value is in doubt (second opinion, ~7% of pages) | 40 real pages (10 rotated) reprocessed: same rotation and identical text on 40/40 | **Kept** |
+| The two changes above, timed back to back on 20 pages (5 rotated), alternating order | 9.7 s → 8.1 s per page (-17%). PaddleOCR is now ~80% of the time | – |
+| PaddleOCR on smaller images (1600 px long side instead of 2500) | -24% time, but one page kept only 44% of its text | Rejected |
+| Two PaddleOCR workers side by side | -21%: PaddleOCR already uses every core | Not worth it on 8 threads / 15 GB |
+| oneDNN (Intel CPU acceleration) in Paddle 3.3.1 | Crashes (`ConvertPirAttribute2RuntimeAttribute`), also with the PIR flags off | See below |
+| Paddle 3.2.2 with oneDNN (trial environment) | 2.49 s per page on 99 real pages (the labelled pages plus 40 others), against 4.6–7.6 s. Text identical on the median page, at least 98.6% the same on every page. Field extraction exactly as before: tuning 150/179 (84%), held-out 80/91 (88%), high-confidence 91/95 and 44/45. Memory: 1.2 GB per worker instead of 0.7 GB | Recommended |
+| Whole reading path, back to back on 20 pages | Today 9.7 s per page; with OSD and Paddle 3.2.2 + oneDNN, **5.0 s per page**. 5,500 pages: about 15 h → **about 7.5 h** on this laptop | – |
+
+**Workflow change.** Each upload is now a quick check job (render + picture quality, highest priority) followed by a
+read job. A student hears about a blurry or small photo within seconds even when hundreds of documents are waiting to
+be read. `make check-worker` runs the checks in a separate light process (no OCR engines loaded).
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and

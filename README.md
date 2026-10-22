@@ -156,6 +156,7 @@ make extract              # names, IDs, SGPA/CGPA, percentage, total, result for
 make extract force=1      # re-extract everything (reviewer corrections are always kept)
 make extract-eval         # score on the labelled tuning set and the held-out set (backend/data/ocr_eval/)
 make extraction-report    # how many pages of each type have each field (counts only)
+make readability          # which pages were read too poorly to trust (students confirm values / retake)
 ```
 
 Values are stored per page (`extracted_fields`) with a confidence and their position. Confidence ≥ 0.9 was
@@ -269,10 +270,17 @@ The queue is a table in the database, so there is no extra service to install.
 ```bash
 make run            # terminal 1: web app + API
 make worker         # terminal 2: processes queued documents (Ctrl+C finishes the current one, then stops)
+make check-worker   # optional terminal 3: only the quick upload checks (no OCR loaded, little memory)
 make enqueue        # queue documents whose processing is out of date (all=1: everything)
 make queue-status   # job counts, and failures by error type
 ```
 
+- Every upload is processed in two jobs:
+  1. A quick check (pages rendered, picture quality judged, a few seconds). It runs before any waiting reads, so a
+     blurry photo is reported at once even with a backlog.
+  2. The read (OCR, classification, extraction, validation), which takes about 8 s per page on this laptop.
+
+  `make check-worker` keeps the checks instant even while `make worker` is busy reading.
 - Staff can add a document to an applicant on the review screen ("Add a document"), and its progress is shown live.
 - Upload rules:
   - At most 10 MB.

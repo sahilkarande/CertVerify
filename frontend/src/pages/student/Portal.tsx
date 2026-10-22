@@ -7,6 +7,7 @@ import {
   type ChecklistItem,
   type Intake,
   type StudentDocument,
+  type StudentPage,
 } from "../../api";
 import { MessageThread } from "../ConsolePanels";
 
@@ -232,7 +233,7 @@ function ChecklistCard({ item, intakeId, editable, onChange }: {
       )}
       {item.problems.map((p) => <p key={p} className="warning-text small">⚠ {p}</p>)}
       {item.documents.map((d) => (
-        <DocumentRow key={d.id} doc={d} editable={editable} onRemoved={onChange} />
+        <DocumentRow key={d.id} doc={d} editable={editable} onChange={onChange} />
       ))}
       {editable && (
         <div className="upload-buttons">
@@ -250,11 +251,11 @@ function ChecklistCard({ item, intakeId, editable, onChange }: {
   );
 }
 
-function DocumentRow({ doc, editable, onRemoved }: { doc: StudentDocument; editable: boolean; onRemoved: () => void }) {
+function DocumentRow({ doc, editable, onChange }: { doc: StudentDocument; editable: boolean; onChange: () => void }) {
   const remove = async () => {
     if (!window.confirm("Remove this file?")) return;
     await studentApi.remove(doc.id);
-    onRemoved();
+    onChange();
   };
   return (
     <div className="doc-row">
@@ -271,8 +272,68 @@ function DocumentRow({ doc, editable, onRemoved }: { doc: StudentDocument; edita
       {doc.pages.flatMap((p) => p.problems.map((m) => (
         <p key={`${p.id}${m}`} className="warning-text small">Page {p.number}: {m}</p>
       )))}
+      {editable && doc.pages.filter((p) => p.confirm).map((p) => (
+        <ConfirmForm key={`${p.id}-confirm`} page={p} onDone={onChange} />
+      ))}
       {editable && <button className="link-button small" onClick={remove}>Remove this file</button>}
     </div>
+  );
+}
+
+const PLACEHOLDER = { name: "e.g. as printed after NAME", id: "e.g. 1234567", number: "e.g. 536" };
+
+/** We could not read some values clearly: the student types them as printed (we never show
+ * what we read, so the check means something). They are kept only if they match the page. */
+function ConfirmForm({ page, onDone }: { page: StudentPage; onDone: () => void }) {
+  const confirm = page.confirm!;
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [notPrinted, setNotPrinted] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const out: Record<string, string | null> = {};
+      for (const f of confirm.fields) out[f.key] = notPrinted[f.key] ? null : (values[f.key] ?? "").trim();
+      await studentApi.confirmPage(page.id, out);
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="confirm-form" onSubmit={submit}>
+      <div className="strong small">Page {page.number}: please type these exactly as printed</div>
+      {confirm.mismatched.length > 0 && (
+        <p className="error-text small" role="alert">
+          What you typed for {confirm.mismatched.join(", ")} does not match what we could read.
+          Check it against the document, or upload a clearer copy.
+          {confirm.attempts_left === 1 && " You have one more try."}
+        </p>
+      )}
+      {confirm.fields.map((f) => (
+        <div key={f.key} className="confirm-field">
+          <label>
+            {f.label}
+            <input required={!notPrinted[f.key]} disabled={notPrinted[f.key]} autoComplete="off"
+              inputMode={f.kind === "number" ? "decimal" : undefined} maxLength={200}
+              placeholder={PLACEHOLDER[f.kind]} value={values[f.key] ?? ""}
+              onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
+          </label>
+          <label className="check-line small">
+            <input type="checkbox" checked={!!notPrinted[f.key]}
+              onChange={(e) => setNotPrinted({ ...notPrinted, [f.key]: e.target.checked })} />
+            Not printed on this page
+          </label>
+        </div>
+      ))}
+      <button className="secondary" disabled={busy}>{busy ? "Checking…" : "Check"}</button>
+      {error && <p className="error-text small" role="alert">{error}</p>}
+    </form>
   );
 }
 
