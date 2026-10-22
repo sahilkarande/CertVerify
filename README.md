@@ -208,6 +208,32 @@ make corrections-report    # per value type: how often the machine was right, co
 make export-corrections    # training data: backend/data/training/corrections-<date>.jsonl (personal data, private)
 ```
 
+## Learning loop & new document types
+
+**Page-type model.** A text classifier is trained on pages the rules recognised by an exact title, plus page types
+set by verifiers. It is never trained on the hand-labelled evaluation pages, and it is stored as plain JSON numbers
+(no pickle files), versioned, and checked against its recorded hash on every load.
+
+```bash
+make train-classifier          # new version, scored on the hand labels (needs: pip install -e ".[train]")
+make models                    # versions and scores
+make activate-model version=1  # use it (without version: switch it off)
+make classify force=1          # re-classify with it
+```
+
+How the model is used:
+1. It types pages the rules cannot recognise, when it is at least 60% sure.
+2. It overrules a "same as previous page" guess only when it is at least 80% sure.
+3. It lowers the confidence of an exact rule match it strongly disagrees with.
+
+Model-typed pages are capped at 0.85 confidence, so a person always checks them. Verifiers can set a page's type in
+the console; that type is kept on re-classification and used as a training label.
+
+**New document types without code** (Settings, platform admins): a name, the values to read (chosen from what the
+extractor can find, plus values verifiers type in) and title phrases from the page header. Pages whose header contains
+a phrase get that type. **Checklists** (Settings, institution admins for their own institution): mark documents as
+required or not, change the accepted types, add documents.
+
 ## Student portal
 
 Students open the same address and choose "I'm a student":

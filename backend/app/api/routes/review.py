@@ -178,3 +178,18 @@ def message(
     actions.send_message(db, user, sub, body.body, request.app.state.email)
     db.commit()
     return {"messages": actions.messages_json(db, sub.id)}
+
+
+class PageTypeIn(BaseModel):
+    type: str = Field(max_length=64)
+
+
+@router.post("/pages/{page_id}/type")
+def set_page_type(page_id: uuid.UUID, body: PageTypeIn, user: Staff, db: DbSession) -> dict:
+    page = db.get(DocumentPage, page_id)
+    if page is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    _check_scope(user, page.document.submission.applicant.institution_id)
+    actions.set_page_type(db, user, page, body.type)
+    db.commit()
+    return {"id": str(page.id), "type": body.type}

@@ -7,11 +7,12 @@ so the uploader sees progress and a crash resumes from the last finished step's 
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.classify.pipeline import classify_document, type_id_map
+from app.classify.pipeline import classify_document, load_model, phrase_rules, type_id_map
 from app.extract.pipeline import extract_page_fields
 from app.intake.pipeline import is_identity_slot, process_document
 from app.jobs.queue import progress
@@ -31,6 +32,7 @@ class Engines:
 
     rotation: OcrEngine  # Tesseract: decides each page's rotation
     reader: OcrEngine | None = None  # PaddleOCR, when installed
+    models_dir: Path | None = None  # trained models (page-type model, when one is active)
     extra: dict = field(default_factory=dict)
 
     def close(self) -> None:
@@ -57,7 +59,9 @@ def run_document_job(db: Session, storage: ObjectStorage, engines: Engines, job:
                 db.commit()
 
         progress(db, job, JobStage.CLASSIFYING)
-        classify_document(db, doc, type_id_map(db))
+        classify_document(
+            db, doc, type_id_map(db), load_model(db, engines.models_dir), phrase_rules(db)
+        )
         db.commit()
 
         progress(db, job, JobStage.EXTRACTING)

@@ -132,10 +132,11 @@ def seed_document_types(db: Session) -> tuple[int, int]:
     for spec in DOCUMENT_TYPES:
         row = existing.get(spec["code"])
         if row is None:
-            db.add(DocumentType(**spec))
+            db.add(DocumentType(**spec, builtin=True))
             created += 1
             continue
-        changed = False
+        changed = not row.builtin
+        row.builtin = True
         for attr in ("name", "category", "field_schema"):
             if getattr(row, attr) != spec[attr]:
                 setattr(row, attr, spec[attr])

@@ -194,6 +194,14 @@ def submission_detail(
             "note": sub.decision_note,
         },
         "messages": messages_json(db, sub.id),
+        "document_types": [
+            {"code": c, "name": n}
+            for c, n in db.execute(
+                select(DocumentType.code, DocumentType.name)
+                .where(DocumentType.is_active.is_(True))
+                .order_by(DocumentType.name)
+            )
+        ],
         "issues": [
             {
                 "id": str(i.id),

@@ -288,3 +288,30 @@ def messages_json(db: Session, sub_id: uuid.UUID) -> list[dict]:
         }
         for m, name in rows
     ]
+
+
+def set_page_type(db: Session, user: User, page: DocumentPage, code: str) -> DocumentPage:
+    """A verifier's page type: kept on re-classification, re-read at once, and a training
+    label for the next page-type model."""
+    t = db.scalar(
+        select(DocumentType).where(DocumentType.code == code, DocumentType.is_active.is_(True))
+    )
+    if t is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown document type.")
+    from app.extract.pipeline import extract_page_fields
+    from app.models.enums import ClassificationMethod
+
+    page.detected_type_id = t.id
+    page.classification_method = ClassificationMethod.HUMAN
+    page.classification_confidence = 1.0
+    page.classification_evidence = [f"human:{user.id}"]
+    sub = page.document.submission
+    db.flush()
+    extract_page_fields(db, page)  # the values to read depend on the type
+    doc = page.document
+    types = {p.detected_type_id for p in doc.pages}
+    doc.detected_type_id = types.pop() if len(types) == 1 else None
+    _audit(db, user, "page.type_set", "document_page", page.id, sub, type=code)
+    db.flush()
+    validate_submission(db, sub)
+    return page

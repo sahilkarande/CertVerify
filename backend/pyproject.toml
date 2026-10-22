@@ -32,6 +32,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Training models from labelled data (make train-classifier); the app itself does not need it.
+train = ["scikit-learn>=1.5"]
 # Only needed by the seed-data importer (Google Drive download), not by the core platform.
 gdrive = [
     "google-api-python-client>=2.130",

@@ -272,3 +272,15 @@ button.confirm { margin-left: 6px; border: 1px solid var(--border); background: 
 .notice.rejected { border-left: 4px solid var(--error); }
 .pill.s-changes_requested { background: var(--warning-soft); color: var(--warning); }
 .pill.s-draft { background: var(--info-soft); color: var(--info); }
+
+/* settings & type picker */
+.settings { max-width: 1100px; display: grid; gap: 12px; }
+.settings h2 { margin-top: 18px; }
+table.list.compact td, table.list.compact th { padding: 8px 10px; vertical-align: top; }
+table.list.compact tbody tr { cursor: default; }
+.new-type summary { cursor: pointer; }
+.type-picker { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0 6px; }
+.type-picker select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+
+.table-scroll { overflow-x: auto; }
+.table-scroll table { min-width: 640px; }

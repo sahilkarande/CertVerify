@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: SecretStr | None = None
 
+    # Trained models (JSON) and the minimum probability at which the page-type model may
+    # type a page the rules could not (measured: 8/8 correct at >= 0.6 on unrecognised pages).
+    models_dir: Path = BACKEND_DIR / "data" / "models"
+
     # Seed-data importer: Google OAuth client (downloaded from Google Cloud) and the saved
     # sign-in token. Both live in the git-ignored data directory.
     google_client_secret_file: Path = BACKEND_DIR / "data" / "google_client_secret.json"

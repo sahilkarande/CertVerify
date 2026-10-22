@@ -201,6 +201,7 @@ export default function SubmissionView() {
             position={`${allPages.findIndex((x) => x.page.id === pageId) + 1} / ${allPages.length}`}
             onStep={step}
             reload={() => load()}
+            types={data.document_types}
           />
         </>
       ) : (
@@ -302,6 +303,7 @@ function PagePanel(props: {
   position: string;
   onStep: (d: number) => void;
   reload: () => void;
+  types: { code: string; name: string }[];
 }) {
   const { doc, page } = props.sel;
   const fieldOrder = Object.keys(FIELD_LABELS);
@@ -326,6 +328,7 @@ function PagePanel(props: {
       <p className="muted small">
         {label(SLOT_LABELS, doc.slot)} · page {page.number} of {doc.page_count}
       </p>
+      <PageTypePicker page={page} types={props.types} reload={props.reload} />
       <dl className="facts">
         <dt>Recognised by</dt>
         <dd>
@@ -424,6 +427,35 @@ function FieldRow({ f, hovered, onHover, reload }: {
         )}
       </td>
     </tr>
+  );
+}
+
+const METHOD_LABELS: Record<string, string> = {
+  content_exact: "Title found",
+  content_fuzzy: "Title found (approximate)",
+  continuation: "Same as previous page",
+  slot_hint: "Guessed from upload slot",
+  model: "Model suggestion",
+  phrase: "Admin title phrase",
+  human: "Set by a verifier",
+};
+
+function PageTypePicker({ page, types, reload }: {
+  page: Page; types: { code: string; name: string }[]; reload: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="type-picker small">
+      <span className="muted">{page.classification_method ? METHOD_LABELS[page.classification_method] ?? page.classification_method : "Not recognised"}</span>
+      <select aria-label="Change page type" value={page.type ?? ""} onChange={async (e) => {
+        setError(null);
+        try { await console_.setPageType(page.id, e.target.value); reload(); } catch (err) { setError((err as Error).message); }
+      }}>
+        <option value="" disabled>Set the type…</option>
+        {types.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
+      </select>
+      {error && <span className="error-text">{error}</span>}
+    </div>
   );
 }
 

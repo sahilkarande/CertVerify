@@ -22,40 +22,87 @@ SUPPORTING = "supporting_page"
 
 # School exam titles, matched on the space-free header. Board names such as "Board of Secondary
 # and Higher Secondary Education" appear on both 10th and 12th sheets, so only titles count.
-HSC_PATTERNS = [r"HIGHERSECONDARY(SCHOOL)?CERTIFICATE", r"SENIORSCHOOLCERTIFICATE",
-                r"SENIORSECONDARY", r"10\+2", r"INTERMEDIATEEXAMINATION", r"PREUNIVERSITY",
-                r"CLASSXII"]  # fmt: skip
-SSC_PATTERNS = [r"SECONDARYSCHOOLCERTIFICATE", r"SECONDARYSCHOOLEXAMINATION",
-                r"CERTIFICATEOFSECONDARYEDUCATION", r"CLASSX(?!I)", r"HIGHSCHOOLEXAMINATION",
-                r"MATRICULATION"]  # fmt: skip
+HSC_PATTERNS = [
+    r"HIGHERSECONDARY(SCHOOL)?CERTIFICATE",
+    r"SENIORSCHOOLCERTIFICATE",
+    r"SENIORSECONDARY",
+    r"10\+2",
+    r"INTERMEDIATEEXAMINATION",
+    r"PREUNIVERSITY",
+    r"CLASSXII",
+]
+SSC_PATTERNS = [
+    r"SECONDARYSCHOOLCERTIFICATE",
+    r"SECONDARYSCHOOLEXAMINATION",
+    r"CERTIFICATEOFSECONDARYEDUCATION",
+    r"CLASSX(?!I)",
+    r"HIGHSCHOOLEXAMINATION",
+    r"MATRICULATION",
+]
 # Full titles for approximate matching of OCR-damaged headers ("SECONDARY SCHOO! CERTIFICATE").
-HSC_TITLES = ["HIGHERSECONDARYCERTIFICATEEXAMINATION", "HIGHERSECONDARYSCHOOLCERTIFICATE",
-              "SENIORSCHOOLCERTIFICATEEXAMINATION"]  # fmt: skip
-SSC_TITLES = ["SECONDARYSCHOOLCERTIFICATEEXAMINATION", "SECONDARYSCHOOLEXAMINATION",
-              "CERTIFICATEOFSECONDARYEDUCATION", "SECONDARYEDUCATIONEXAMINATION"]  # fmt: skip
+HSC_TITLES = [
+    "HIGHERSECONDARYCERTIFICATEEXAMINATION",
+    "HIGHERSECONDARYSCHOOLCERTIFICATE",
+    "SENIORSCHOOLCERTIFICATEEXAMINATION",
+]
+SSC_TITLES = [
+    "SECONDARYSCHOOLCERTIFICATEEXAMINATION",
+    "SECONDARYSCHOOLEXAMINATION",
+    "CERTIFICATEOFSECONDARYEDUCATION",
+    "SECONDARYEDUCATIONEXAMINATION",
+]
 FUZZY_MIN = 0.8
 FUZZY_MARGIN = 0.03  # the two families must differ, or the title is too damaged to tell
 
 DIPLOMA_PATTERNS = [r"BOARD OF TECHNICAL EDUCATION", r"POLYTECHNIC", r"DIPLOMA IN\b"]
-PROVISIONAL_PATTERNS = [r"PROVISIONAL", r"PASSING CERTIFICATE", r"CERTIFY THAT .{0,80}PASSED\b",
-                        r"ELIGIBLE FOR THE (AWARD OF )?(THE )?(SAID )?DEGREE",
-                        r"PASSED THE .{0,80}DEGREE EXAMINATION",
-                        r"FULFILLED THE .{0,40}REQUIREMENT"]  # fmt: skip
+PROVISIONAL_PATTERNS = [
+    r"PROVISIONAL",
+    r"PASSING CERTIFICATE",
+    r"CERTIFY THAT .{0,80}PASSED\b",
+    r"ELIGIBLE FOR THE (AWARD OF )?(THE )?(SAID )?DEGREE",
+    r"PASSED THE .{0,80}DEGREE EXAMINATION",
+    r"FULFILLED THE .{0,40}REQUIREMENT",
+]
 # Degree certificates are often only a sentence ("We, the Chancellor ... confer the degree").
-DEGREE_PATTERNS = [r"DEGREE CERTIFICATE", r"CONFERRED", r"CONFERS? (UPON|THE DEGREE)",
-                   r"CONFER THE DEGREE", r"DULY QUALIFIED FOR THE DEGREE", r"CERTIFIES THAT",
-                   r"HAS BEEN ADMITTED TO THE DEGREE", r"DEGREE SERIAL", r"THIS DEGREE OF",
-                   r"\bWE,? THE CHANC", r"AWARDED THE DEGREE"]  # fmt: skip
+DEGREE_PATTERNS = [
+    r"DEGREE CERTIFICATE",
+    r"CONFERRED",
+    r"CONFERS? (UPON|THE DEGREE)",
+    r"CONFER THE DEGREE",
+    r"DULY QUALIFIED FOR THE DEGREE",
+    r"CERTIFIES THAT",
+    r"HAS BEEN ADMITTED TO THE DEGREE",
+    r"DEGREE SERIAL",
+    r"THIS DEGREE OF",
+    r"\bWE,? THE CHANC",
+    r"AWARDED THE DEGREE",
+]
 # Words only a provisional/passing certificate uses; checked before the degree wording, which
 # provisional certificates also contain ("eligible for the said Degree Certificate").
 PROVISIONAL_STRONG = [r"PROVISIONAL", r"PASSING CERTIFICATE"]
 # Signals of a marks/grades statement; certificates have few of these.
-MARKSHEET_PATTERNS = [r"SEMESTER", r"\bSEM\b", r"SGPA", r"\bSPI\b", r"SGPI", r"GRADE CARD",
-                      r"GRADE REPORT", r"STATEMENT OF (MARKS|GRADE)", r"PERFORMANCE REPORT",
-                      r"COURSE (CODE|TITLE|NAME)", r"CREDITS?"]  # fmt: skip
+MARKSHEET_PATTERNS = [
+    r"SEMESTER",
+    r"\bSEM\b",
+    r"SGPA",
+    r"\bSPI\b",
+    r"SGPI",
+    r"GRADE CARD",
+    r"GRADE REPORT",
+    r"STATEMENT OF (MARKS|GRADE)",
+    r"PERFORMANCE REPORT",
+    r"COURSE (CODE|TITLE|NAME)",
+    r"CREDITS?",
+]
 BACKSIDE_PATTERNS = [r"SPEED POST", r"CONVOCATION NUMBER"]
-PG_PATTERNS = [r"\bM\.? ?SC\b", r"\bMCA\b", r"MASTER OF", r"\bM\.? ?TECH\b", r"\bMBA\b",
-               r"\bM\.? ?COM\b"]  # fmt: skip
+PG_PATTERNS = [
+    r"\bM\.? ?SC\b",
+    r"\bMCA\b",
+    r"MASTER OF",
+    r"\bM\.? ?TECH\b",
+    r"\bMBA\b",
+    r"\bM\.? ?COM\b",
+]
 
 # Thresholds on the number of marksheet signals (measured).
 PROVISIONAL_MAX_SIGNALS = 3
@@ -64,13 +111,23 @@ MARKSHEET_MIN_SIGNALS = 2
 BACKSIDE_MAX_WORDS = 60
 
 ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10}
-ORDINAL = {"FIRST": 1, "SECOND": 2, "THIRD": 3, "FOURTH": 4, "FIFTH": 5, "SIXTH": 6,
-           "SEVENTH": 7, "EIGHTH": 8}  # fmt: skip
+ORDINAL = {
+    "FIRST": 1,
+    "SECOND": 2,
+    "THIRD": 3,
+    "FOURTH": 4,
+    "FIFTH": 5,
+    "SIXTH": 6,
+    "SEVENTH": 7,
+    "EIGHTH": 8,
+}
 # Roman numerals as OCR writes them: 'I' is often read as L, 1 or |  (VIII -> VILL, IV -> LV).
 _NUM = r"([IVXL1|]{1,4}|[1-8]|FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH)"
-SEMESTER_PATTERNS = [rf"SEM(?:ESTER)?\s*[:.\-]*\s*\(?{_NUM}\b",
-                     rf"\b{_NUM}\s*(?:ST|ND|RD|TH)?\s*SEM(?:ESTER)?\b",
-                     rf"TERM\s*[:.\-]*\s*{_NUM}\b"]  # fmt: skip
+SEMESTER_PATTERNS = [
+    rf"SEM(?:ESTER)?\s*[:.\-]*\s*\(?{_NUM}\b",
+    rf"\b{_NUM}\s*(?:ST|ND|RD|TH)?\s*SEM(?:ESTER)?\b",
+    rf"TERM\s*[:.\-]*\s*{_NUM}\b",
+]
 # SPPU "STATEMENT OF MARKS FOR F.E./S.E./T.E./B.E." covers both semesters of that year.
 YEAR_STATEMENT = re.compile(r"\bFOR\s+(F|S|T|B)\s?\.?\s?E\s?\.")
 YEAR_FIRST_SEMESTER = {"F": 1, "S": 3, "T": 5, "B": 7}
@@ -145,6 +202,21 @@ def school_level(header_compact: str) -> tuple[str | None, bool, str]:
     if h > s:
         return HSC, True, f"fuzzy:hsc_title:{h:.2f}"
     return SSC, True, f"fuzzy:ssc_title:{s:.2f}"
+
+
+def classification_for(
+    code: str, text: str, words: list, confidence: float, evidence: list[str]
+) -> Classification:
+    """A classification for a type decided elsewhere (model, admin phrase, verifier), with the
+    same semester and level details the rules would add."""
+    full = norm(text)
+    level = AcademicLevel.SCHOOL if code in (SSC, HSC, DIPLOMA) else None
+    if code in (SEMESTER, PROVISIONAL, DEGREE):
+        level = AcademicLevel.PG if _first(full, PG_PATTERNS) else AcademicLevel.UG
+    sems = find_semesters(header_text(words), full) if code in (SEMESTER, DIPLOMA) else []
+    return Classification(
+        type_code=code, confidence=confidence, semesters=sems, level=level, evidence=evidence
+    )
 
 
 def classify_text(text: str, words: list) -> Classification:

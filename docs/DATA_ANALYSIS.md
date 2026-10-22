@@ -414,6 +414,28 @@ Run end to end on a throwaway copy of the database with the real worker, Tessera
   only when every form word is found, and otherwise the name is kept exactly as printed. One tuning-set name became
   a miss (34 → 33/39); the held-out score is unchanged.
 
+### Learning loop: page-type model (Phase 13, 2026-10-22)
+
+- **Training data:** no verifier corrections existed yet, so the model learned from the 829 pages the rules typed by an
+  exact title. The 80 hand-labelled pages were kept out of training to measure it.
+- **Model:** TF-IDF of words and word pairs, with logistic regression.
+
+| | Rules alone | Model alone (on its training-free hand labels) | Rules + model |
+|---|---|---|---|
+| Hand-labelled pages correct | 77/80 | 79/80 (75/75 where >= 0.6 sure) | **80/80** |
+| Pages nobody could type | 15 | – | 4 |
+
+Every page whose type the model changed was checked by eye or is hand-labelled:
+- **Pages the rules could not type, model at least 60% sure:** 8 of 8 correct. Below 60%, 2 of 5 were correct, so
+  those stay with a person.
+- **Model at least 80% sure, overruling a guess from the previous page or the upload slot:** 5 of 5 correct (four
+  Mumbai passing certificates and a Pune University degree certificate that the fallbacks had called semester
+  marksheets).
+- **A 0.60 guess overruling the back of a degree certificate was wrong.** The model may therefore overrule a
+  "previous page" guess only when it is at least 80% sure.
+- **Net effect:** 17 pages got a different type, all correct. One real problem surfaced: a 10th marksheet uploaded in
+  the 12th/Diploma slot, with no 12th anywhere, which had previously been reported only as "could not recognise".
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and

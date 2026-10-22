@@ -1,12 +1,12 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run run-lan test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user worker enqueue queue-status corrections-report export-corrections
+.PHONY: setup run run-lan test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user worker enqueue queue-status corrections-report export-corrections train-classifier models activate-model
 
 setup:
 	python3 -m venv $(VENV)
 	$(PY) -m pip install --upgrade pip
-	cd backend && .venv/bin/pip install -e ".[dev,gdrive]"
+	cd backend && .venv/bin/pip install -e ".[dev,gdrive,train]"
 
 run:
 	cd backend && .venv/bin/uvicorn app.main:create_app --factory --reload --host 127.0.0.1 --port 8000
@@ -172,3 +172,15 @@ corrections-report:
 # Verified values as training data (backend/data/training/, contains personal data)
 export-corrections:
 	cd backend && .venv/bin/python -m app.cli export-corrections
+
+# --- Learning loop (Phase 13) ---
+# Train a new page-type model version (needs the "train" extra; scored on hand labels)
+train-classifier:
+	cd backend && .venv/bin/python -m app.cli train-classifier
+
+models:
+	cd backend && .venv/bin/python -m app.cli models
+
+# make activate-model version=1   (without version: switch the model off, rules only)
+activate-model:
+	cd backend && .venv/bin/python -m app.cli activate-model $(if $(version),--version $(version))

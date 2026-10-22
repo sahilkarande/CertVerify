@@ -89,6 +89,7 @@ export interface SubmissionDetail {
   verdict: Verdict;
   decision: { by: string | null; at: string | null; note: string | null };
   messages: Message[];
+  document_types: { code: string; name: string }[];
   issues: Issue[];
   documents: DocumentInfo[];
 }
@@ -155,6 +156,52 @@ export const console_ = {
       { decision, note, expected_status }),
   message: (submissionId: string, body: string) =>
     request<{ messages: Message[] }>("POST", `${BASE}/submissions/${submissionId}/messages`, { body }),
+  setPageType: (pageId: string, type: string) =>
+    request<{ type: string }>("POST", `${BASE}/pages/${pageId}/type`, { type }),
+};
+
+// --- administration ----------------------------------------------------------------
+
+export interface FieldSpec {
+  key: string;
+  label?: string | null;
+  type?: string | null;
+  required?: boolean;
+}
+
+export interface DocType {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  builtin: boolean;
+  active: boolean;
+  fields: FieldSpec[];
+  title_phrases: string[];
+  pages: number;
+}
+
+export interface RequirementSetInfo {
+  id: string;
+  code: string;
+  name: string;
+  active: boolean;
+  items: { id: string; key: string; label: string; required: boolean; accepted_types: string[];
+           condition: Record<string, unknown> | null }[];
+}
+
+const ADMIN = `${API}/admin`;
+export const adminApi = {
+  types: () => request<{ types: DocType[]; extractable: Record<string, string> }>("GET", `${ADMIN}/document-types`),
+  createType: (body: { code: string; name: string; category: string; fields: FieldSpec[]; title_phrases: string[] }) =>
+    request<{ id: string }>("POST", `${ADMIN}/document-types`, body),
+  updateType: (id: string, body: Partial<{ name: string; title_phrases: string[]; fields: FieldSpec[]; active: boolean }>) =>
+    request<{ id: string }>("PATCH", `${ADMIN}/document-types/${id}`, body),
+  sets: () => request<{ requirement_sets: RequirementSetInfo[] }>("GET", `${ADMIN}/requirement-sets`),
+  updateItem: (id: string, body: Partial<{ label: string; required: boolean; accepted_types: string[] }>) =>
+    request<{ id: string }>("PATCH", `${ADMIN}/requirement-items/${id}`, body),
+  addItem: (setId: string, body: { key: string; label: string; accepted_types: string[]; required: boolean }) =>
+    request<{ id: string }>("POST", `${ADMIN}/requirement-sets/${setId}/items`, body),
 };
 
 // --- sign-in ---------------------------------------------------------------------

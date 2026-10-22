@@ -333,6 +333,8 @@ def cmd_classify(args: argparse.Namespace) -> int:
     from app.classify.pipeline import (
         classify_document,
         documents_needing_classification,
+        load_model,
+        phrase_rules,
         type_id_map,
     )
     from app.models import Document
@@ -342,9 +344,14 @@ def cmd_classify(args: argparse.Namespace) -> int:
     started = time.perf_counter()
     with db.session_factory() as session:
         type_ids = type_id_map(session)
+        model = load_model(session, get_settings().models_dir)
+        phrases = phrase_rules(session)
+        print(f"page-type model: {'v' + str(model.version) if model else 'none active'}")
         ids = documents_needing_classification(session, force=args.force)
         for n, doc_id in enumerate(ids, start=1):
-            result = classify_document(session, session.get(Document, doc_id), type_ids)
+            result = classify_document(
+                session, session.get(Document, doc_id), type_ids, model, phrases
+            )
             session.commit()
             methods.update(result.methods)
             if n % 50 == 0 or n == len(ids):
@@ -747,6 +754,78 @@ def cmd_export_corrections(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_train_classifier(_: argparse.Namespace) -> int:
+    from app.learn.registry import train_page_type
+
+    settings = get_settings()
+    db = _database()
+    with db.session_factory() as session:
+        row = train_page_type(session, settings.models_dir, settings.classification_labels_file)
+        session.commit()
+        m = row.metrics
+    db.dispose()
+    print(
+        f"trained page-type model v{row.version} on {m['train_pages']} pages "
+        f"({', '.join(f'{k}={v}' for k, v in sorted(m['train_by_type'].items()))})"
+    )
+    if m["heldout_pages"]:
+        print(
+            f"hand-labelled pages (never trained on): {m['heldout_correct']}/{m['heldout_pages']} "
+            "correct; by minimum probability: "
+            + ", ".join(f">={k}: {a}/{b}" for k, (a, b) in m["heldout_by_min_probability"].items())
+        )
+    print(f"not active yet: make activate-model version={row.version}")
+    return 0
+
+
+def cmd_models(_: argparse.Namespace) -> int:
+    from app.models import MlModel
+
+    db = _database()
+    with db.session_factory() as session:
+        rows = session.scalars(select(MlModel).order_by(MlModel.kind, MlModel.version)).all()
+        for r in rows:
+            m = r.metrics
+            score = (
+                f"{m.get('heldout_correct')}/{m.get('heldout_pages')}"
+                if m.get("heldout_pages")
+                else "-"
+            )
+            print(
+                f"{r.kind} v{r.version}  {'ACTIVE' if r.active else 'inactive':8}  "
+                f"trained on {m.get('train_pages')} pages  held-out {score}  "
+                f"{r.created_at:%Y-%m-%d %H:%M}"
+            )
+        if not rows:
+            print("no models yet (make train-classifier)")
+    db.dispose()
+    return 0
+
+
+def cmd_activate_model(args: argparse.Namespace) -> int:
+    from app.learn.registry import PAGE_TYPE, activate, deactivate
+    from app.services.audit import record_event
+
+    db = _database()
+    with db.session_factory() as session:
+        if args.version is None:
+            deactivate(session, PAGE_TYPE)
+            msg = "page-type model switched off (rules only)"
+        else:
+            row = activate(session, PAGE_TYPE, args.version)
+            msg = f"page-type model v{row.version} is now active"
+        record_event(
+            session,
+            action="model.activated",
+            entity_type="ml_model",
+            details={"kind": PAGE_TYPE, "version": args.version},
+        )
+        session.commit()
+    db.dispose()
+    print(msg + "; re-run classification with: make classify force=1")
+    return 0
+
+
 def _storage(settings):
     from app.storage import EncryptedLocalStorage
 
@@ -897,6 +976,16 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("export-corrections", help="Export verified values as training data")
     p.add_argument("--out", default=None)
     p.set_defaults(func=cmd_export_corrections)
+
+    p = sub.add_parser("train-classifier", help="Train a new page-type model version")
+    p.set_defaults(func=cmd_train_classifier)
+
+    p = sub.add_parser("models", help="List trained model versions")
+    p.set_defaults(func=cmd_models)
+
+    p = sub.add_parser("activate-model", help="Use a page-type model version (none = rules only)")
+    p.add_argument("--version", type=int, default=None)
+    p.set_defaults(func=cmd_activate_model)
 
     p = sub.add_parser("classify", help="Classify OCR'd pages (type, semester, level)")
     p.add_argument("--force", action="store_true", help="Re-classify even if up to date")

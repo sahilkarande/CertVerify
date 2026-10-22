@@ -60,6 +60,9 @@ class ClassificationMethod(StrEnum):
     CONTENT_FUZZY = "content_fuzzy"  # an OCR-damaged title matched approximately
     CONTINUATION = "continuation"  # unreadable later page: same type as the page before
     SLOT_HINT = "slot_hint"  # unreadable page in a slot that accepts only one type
+    MODEL = "model"  # suggested by the trained page-type model (always reviewed)
+    PHRASE = "phrase"  # a title phrase an admin defined for a document type
+    HUMAN = "human"  # set by a verifier; never overwritten by re-classification
 
 
 class AcademicLevel(StrEnum):

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
 import { SIGNED_OUT_EVENT, auth, type Me } from "./api";
 import ChangePassword from "./pages/ChangePassword";
+import Settings from "./pages/Settings";
 import Portal from "./pages/student/Portal";
 import SignIn from "./pages/SignIn";
 import SubmissionList from "./pages/SubmissionList";
@@ -60,6 +61,9 @@ function App() {
           <span className="small">
             {me.name} · <span className="muted">{ROLE_LABELS[me.role] ?? me.role}{me.institution ? `, ${me.institution}` : ""}</span>
           </span>
+          {(me.role === "platform_admin" || me.role === "institution_admin") && (
+            <Link to="/settings" className="small">Settings</Link>
+          )}
           <Link to="/account/password" className="small">Change password</Link>
           <button className="link-button small" onClick={signOut}>Sign out</button>
         </div>
@@ -68,6 +72,7 @@ function App() {
         <Route path="/" element={<SubmissionList />} />
         <Route path="/submissions/:id" element={<SubmissionView />} />
         <Route path="/account/password" element={<ChangePassword />} />
+        <Route path="/settings" element={<Settings me={me} />} />
         <Route path="*" element={<p className="page-pad">Page not found.</p>} />
       </Routes>
     </BrowserRouter>

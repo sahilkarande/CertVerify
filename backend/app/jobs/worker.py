@@ -24,7 +24,7 @@ IDLE_SLEEP_S = 2.0
 
 
 def build_engines(settings) -> Engines:
-    engines = Engines(rotation=TesseractEngine())
+    engines = Engines(rotation=TesseractEngine(), models_dir=settings.models_dir)
     if settings.paddle_python.is_file():
         from app.ocr.paddle import PaddleEngine
 
