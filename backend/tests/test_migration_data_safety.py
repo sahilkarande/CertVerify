@@ -37,13 +37,13 @@ def test_downgrade_and_upgrade_keep_child_rows(tmp_path: Path) -> None:
         db.commit()
     engine.dispose()
 
-    # The latest migration rebuilds document_pages in batch mode (copy, drop, rename).
-    command.downgrade(cfg, "-1")
+    # Downgrading past the extractor_version migration rebuilds document_pages in batch mode.
+    command.downgrade(cfg, "c5f4bc176401")  # before the page extractor_version migration
     engine = build_engine(url)
     with engine.connect() as conn:  # the downgrade really happened (not silently rolled back)
         cols = {r[1] for r in conn.exec_driver_sql("PRAGMA table_info(document_pages)")}
     engine.dispose()
-    assert "extractor_version" not in cols  # column added by the latest migration
+    assert "extractor_version" not in cols
     command.upgrade(cfg, "head")
 
     engine = build_engine(url)

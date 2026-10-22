@@ -79,10 +79,32 @@ export interface SubmissionDetail {
   documents: DocumentInfo[];
 }
 
-const BASE = "/api/v1/review";
+const API = "/api/v1";
+const BASE = `${API}/review`;
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(BASE + path, { headers: { Accept: "application/json" } });
+/** An API error; ``status`` 401 means "sign in again". */
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+// Fired on any 401 so the app can return to the sign-in screen (session expired/revoked).
+export const SIGNED_OUT_EVENT = "certverify:signed-out";
+
+async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (method !== "GET") headers["X-Requested-With"] = "CertVerify"; // CSRF guard (backend)
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    credentials: "same-origin",
+  });
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -90,11 +112,47 @@ async function get<T>(path: string): Promise<T> {
     } catch {
       /* not JSON */
     }
-    throw new Error(`${res.status}: ${detail}`);
+    if (res.status === 401 && !url.startsWith(`${API}/auth/`)) {
+      window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+    }
+    throw new ApiError(res.status, detail);
   }
-  return res.json() as Promise<T>;
+  return (res.status === 204 ? undefined : await res.json()) as T;
 }
+
+const get = <T>(path: string) => request<T>("GET", BASE + path);
 
 export const fetchSubmissions = () => get<SubmissionRow[]>("/submissions");
 export const fetchSubmission = (id: string) => get<SubmissionDetail>(`/submissions/${id}`);
 export const pageImageUrl = (pageId: string) => `${BASE}/pages/${pageId}/image`;
+
+// --- sign-in ---------------------------------------------------------------------
+
+export interface Me {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  institution: string | null;
+  mfa_passed: boolean;
+  mfa_enrolled: boolean;
+  mfa_required: boolean;
+}
+
+export interface TotpSetup {
+  secret: string;
+  otpauth_uri: string;
+  qr_svg: string;
+}
+
+export const auth = {
+  me: () => request<Me>("GET", `${API}/auth/me`),
+  login: (email: string, password: string) =>
+    request<Me>("POST", `${API}/auth/login`, { email, password }),
+  setupTotp: () => request<TotpSetup>("POST", `${API}/auth/totp/setup`),
+  confirmTotp: (code: string) => request<Me>("POST", `${API}/auth/totp/confirm`, { code }),
+  verifyTotp: (code: string) => request<Me>("POST", `${API}/auth/totp/verify`, { code }),
+  logout: () => request<void>("POST", `${API}/auth/logout`),
+  changePassword: (current_password: string, new_password: string) =>
+    request<{ ok: boolean }>("POST", `${API}/auth/password`, { current_password, new_password }),
+};

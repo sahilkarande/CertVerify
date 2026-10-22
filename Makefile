@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build
+.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user
 
 setup:
 	python3 -m venv $(VENV)
@@ -121,3 +121,25 @@ frontend-build:
 # While editing the dashboard: http://127.0.0.1:5173 with live reload (needs `make run` too)
 frontend-dev:
 	cd frontend && npm run dev
+
+# --- Staff accounts (Phase 9) ---
+# make create-user email=you@example.org name="Your Name" role=verifier [institution=cdac-kharghar] [temp=1]
+#   role: verifier | institution_admin | platform_admin ; asks for the password unless temp=1
+create-user:
+	cd backend && .venv/bin/python -m app.cli create-user "$(email)" --name "$(name)" --role $(role) $(if $(institution),--institution $(institution)) $(if $(temp),--temporary-password)
+
+list-users:
+	cd backend && .venv/bin/python -m app.cli list-users
+
+# Lost phone: remove the authenticator; a new one is set up at the next sign-in
+reset-2fa:
+	cd backend && .venv/bin/python -m app.cli reset-2fa "$(email)"
+
+set-password:
+	cd backend && .venv/bin/python -m app.cli set-password "$(email)" $(if $(temp),--temporary-password)
+
+disable-user:
+	cd backend && .venv/bin/python -m app.cli disable-user "$(email)"
+
+enable-user:
+	cd backend && .venv/bin/python -m app.cli enable-user "$(email)"

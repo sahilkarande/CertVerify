@@ -23,6 +23,10 @@ dependencies = [
     "pillow-heif>=0.18",
     # OCR (needs the system package tesseract-ocr; see README)
     "pytesseract>=0.3.10",
+    # Authentication: Argon2id password hashing, authenticator-app codes, QR for enrolment
+    "argon2-cffi>=23.1",
+    "pyotp>=2.9",
+    "segno>=1.6",
 ]
 
 [project.optional-dependencies]

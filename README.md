@@ -184,8 +184,34 @@ make frontend-build      # after changes to frontend/
 make run                 # then open http://127.0.0.1:8000/
 ```
 
-There is no sign-in yet, so the dashboard and its API answer **only requests from this computer** and are switched
-off in production. Opening an applicant or a page image is recorded in the audit log.
+## Staff accounts and sign-in
+
+Staff sign in with email + password, then a 6-digit code from an authenticator app (Google/Microsoft Authenticator,
+etc.), which is set up by scanning a QR code at the first sign-in.
+
+```bash
+make create-user email=you@example.org name="Your Name" role=platform_admin   # asks for a password (12+ chars)
+make create-user email=v@cdac.in name="A Verifier" role=verifier temp=1      # prints a one-time password
+make list-users
+make reset-2fa email=v@cdac.in        # lost phone: set up a new authenticator at next sign-in
+make set-password email=v@cdac.in     # also signs the user out everywhere
+make disable-user email=v@cdac.in     # and enable-user (also clears a lockout)
+```
+
+- Roles:
+  - **verifier** and **institution_admin** see their own institution's applicants.
+  - **platform_admin** sees all institutions.
+  - Another institution's records answer "not found".
+- Protections:
+  - Passwords are stored as Argon2id hashes, and authenticator secrets are encrypted.
+  - Each sign-in creates a revocable server-side session: an HttpOnly, SameSite=Strict cookie, Secure in production.
+  - Sessions end after 2 h idle or 12 h at most.
+  - 5 wrong attempts lock the account for 15 min, doubling with each further failure; there are per-address limits.
+  - Authenticator codes cannot be reused.
+  - Changes require a same-site request header (CSRF).
+  - Security headers and a strict Content Security Policy are sent on every response.
+- Every sign-in event and every opened applicant or page image is in the audit log, with who did it.
+- Student accounts come with the student portal (Phase 11).
 
 ## Layout
 

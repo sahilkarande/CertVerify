@@ -11,6 +11,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.router import api_router
+from app.api.security import SecurityMiddleware
+from app.auth.totp import derive_key
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.core.security import load_storage_key
@@ -40,7 +42,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.db = Database(settings.database_url)
     # Loaded eagerly so a missing/invalid key fails at startup, not on the first upload.
-    app.state.storage = EncryptedLocalStorage(settings.storage_dir, load_storage_key(settings))
+    master_key = load_storage_key(settings)
+    app.state.storage = EncryptedLocalStorage(settings.storage_dir, master_key)
+    app.state.totp_key = derive_key(master_key)
+    app.add_middleware(SecurityMiddleware)
 
     app.include_router(api_router, prefix=settings.api_prefix)
     _serve_frontend(app)

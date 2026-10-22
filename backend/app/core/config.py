@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     # Base64 (url-safe) of 32 random bytes. Required in production; see app/core/security.py.
     storage_key: SecretStr | None = None
 
+    # Session cookie. Secure (HTTPS-only) defaults to on in production; local http needs off.
+    session_cookie_name: str = "cv_session"
+    session_cookie_secure: bool | None = None
+
+    @property
+    def cookie_secure(self) -> bool:
+        if self.session_cookie_secure is not None:
+            return self.session_cookie_secure
+        return self.environment == "production"
+
     # Seed-data importer: Google OAuth client (downloaded from Google Cloud) and the saved
     # sign-in token. Both live in the git-ignored data directory.
     google_client_secret_file: Path = BACKEND_DIR / "data" / "google_client_secret.json"

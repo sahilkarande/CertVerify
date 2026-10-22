@@ -85,7 +85,7 @@ table.list tr:last-child td { border-bottom: none; }
 .dot-count.warning::before { background: var(--warning); }
 .dot-count.info::before { background: var(--info); }
 
-.verdict { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
+.verdict { display: inline-block; white-space: nowrap; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
 .verdict.clear { background: var(--ok-soft); color: var(--ok); }
 .verdict.review { background: var(--warning-soft); color: var(--warning); }
 .verdict.problems { background: var(--error-soft); color: var(--error); }
@@ -163,3 +163,25 @@ table.fields tr.hot { background: var(--accent-soft); }
   .panel { grid-column: 1 / -1; border-left: none; border-top: 1px solid var(--border); }
   .review-layout { height: auto; }
 }
+
+/* sign-in */
+.auth-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.auth-card { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; }
+.auth-brand { display: block; margin-bottom: 18px; }
+.auth-card h1 { font-size: 18px; margin-bottom: 12px; }
+.auth-form { display: grid; gap: 14px; margin: 16px 0 10px; max-width: 380px; }
+.auth-form label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+.auth-form input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.auth-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.code-input { font-size: 20px !important; letter-spacing: 0.2em; text-align: center; font-variant-numeric: tabular-nums; }
+button.primary { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 10px 14px; font-weight: 600; cursor: pointer; }
+button.primary:disabled { opacity: 0.6; cursor: default; }
+.steps { padding-left: 18px; margin: 0 0 12px; font-size: 13px; display: grid; gap: 4px; }
+.qr { display: grid; justify-items: center; gap: 8px; margin: 8px 0; }
+.qr img { width: 200px; height: 200px; background: #fff; border-radius: 8px; image-rendering: pixelated; }
+.secret { font-size: 13px; letter-spacing: 0.06em; overflow-wrap: anywhere; text-align: center; }
+.user-menu { display: flex; align-items: center; gap: 16px; }
+.user-menu a { color: var(--accent); text-decoration: none; }
+.user-menu .link-button { padding: 0; }
+.narrow { max-width: 480px; }
+.ok-text { color: var(--ok); }

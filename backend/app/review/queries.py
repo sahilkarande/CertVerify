@@ -31,7 +31,8 @@ SEVERITY_ORDER = {IssueSeverity.ERROR: 0, IssueSeverity.WARNING: 1, IssueSeverit
 WEB_IMAGE_LONG_SIDE = 1600
 
 
-def submission_list(db: Session) -> list[dict]:
+def submission_list(db: Session, institution_id: uuid.UUID | None) -> list[dict]:
+    """``institution_id`` None = all institutions (platform admins only)."""
     open_issues: dict = {}
     for sub_id, sev, n in db.execute(
         select(ValidationIssue.submission_id, ValidationIssue.severity, func.count())
@@ -45,11 +46,14 @@ def submission_list(db: Session) -> list[dict]:
         ).all()
     )
     out = []
-    for sub, app in db.execute(
+    q = (
         select(Submission, Applicant)
         .join(Applicant, Applicant.id == Submission.applicant_id)
         .order_by(Applicant.full_name)
-    ):
+    )
+    if institution_id is not None:
+        q = q.where(Applicant.institution_id == institution_id)
+    for sub, app in db.execute(q):
         counts = open_issues.get(sub.id, Counter())
         out.append({
             "id": str(sub.id),
@@ -76,9 +80,16 @@ def _ocr_scale(page: DocumentPage, engine: str, rotation: int) -> tuple[float, f
     return w * s, h * s
 
 
-def submission_detail(db: Session, sub_id: uuid.UUID) -> dict | None:
+def _visible(institution_id: uuid.UUID | None, applicant: Applicant) -> bool:
+    return institution_id is None or applicant.institution_id == institution_id
+
+
+def submission_detail(
+    db: Session, sub_id: uuid.UUID, institution_id: uuid.UUID | None
+) -> dict | None:
+    """None if missing or belonging to another institution (indistinguishable on purpose)."""
     sub = db.get(Submission, sub_id)
-    if sub is None:
+    if sub is None or not _visible(institution_id, sub.applicant):
         return None
     codes = dict(db.execute(select(DocumentType.id, DocumentType.code)).all())
     names = dict(db.execute(select(DocumentType.code, DocumentType.name)).all())
@@ -172,10 +183,14 @@ def submission_detail(db: Session, sub_id: uuid.UUID) -> dict | None:
     }
 
 
-def page_image(db: Session, storage: ObjectStorage, page_id: uuid.UUID) -> bytes | None:
+def page_image(
+    db: Session, storage: ObjectStorage, page_id: uuid.UUID, institution_id: uuid.UUID | None
+) -> bytes | None:
     """The page as a web-sized JPEG, turned upright the way OCR read it."""
     page = db.get(DocumentPage, page_id)
     if page is None or page.image_file is None:
+        return None
+    if not _visible(institution_id, page.document.submission.applicant):
         return None
     reading = preferred_readings(db, [page.id]).get(page.id)
     rotation = reading.rotation if reading else 0

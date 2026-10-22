@@ -497,6 +497,156 @@ def cmd_validation_report(_: argparse.Namespace) -> int:
     return 0
 
 
+def _read_new_password(email: str) -> str | None:
+    import getpass
+
+    from app.auth.passwords import password_problems
+
+    for _ in range(3):
+        pw = getpass.getpass("New password (12+ characters): ")
+        problems = password_problems(pw, email)
+        if problems:
+            print("  " + " ".join(problems))
+            continue
+        if getpass.getpass("Repeat it: ") != pw:
+            print("  The two passwords differ.")
+            continue
+        return pw
+    return None
+
+
+def _temporary_password() -> str:
+    import secrets
+
+    return "-".join(secrets.token_urlsafe(6) for _ in range(3))
+
+
+def cmd_create_user(args: argparse.Namespace) -> int:
+    from app.auth.passwords import hash_password
+    from app.db.base import utcnow
+    from app.models import Institution, User
+    from app.models.enums import UserRole
+    from app.services.audit import record_event
+
+    role = UserRole(args.role)
+    email = args.email.strip().lower()
+    db = _database()
+    with db.session_factory() as session:
+        if session.scalar(select(User).where(User.email == email)):
+            print("error: a user with that email already exists", file=sys.stderr)
+            return 2
+        inst = None
+        if role != UserRole.PLATFORM_ADMIN:
+            inst = session.scalar(select(Institution).where(Institution.slug == args.institution))
+            if inst is None:
+                print(f"error: unknown institution {args.institution!r}", file=sys.stderr)
+                return 2
+        if args.temporary_password:
+            password = _temporary_password()
+        else:
+            password = _read_new_password(email)
+            if password is None:
+                return 2
+        user = User(
+            email=email,
+            full_name=args.name,
+            role=role,
+            institution_id=inst.id if inst else None,
+            password_hash=hash_password(password),
+            password_changed_at=utcnow(),
+        )
+        session.add(user)
+        session.flush()
+        record_event(session, action="user.created", entity_type="user", entity_id=user.id,
+                     institution_id=user.institution_id, details={"role": role.value})  # fmt: skip
+        session.commit()
+    db.dispose()
+    print(f"created {role.value} account; the authenticator app is set up at first sign-in")
+    if args.temporary_password:
+        print(f"temporary password (shown once; change it after signing in): {password}")
+    return 0
+
+
+def _with_user(email: str, action):
+    from app.models import User
+
+    db = _database()
+    with db.session_factory() as session:
+        user = session.scalar(select(User).where(User.email == email.strip().lower()))
+        if user is None:
+            print("error: no user with that email", file=sys.stderr)
+            return 2
+        code = action(session, user)
+        session.commit()
+    db.dispose()
+    return code
+
+
+def cmd_set_password(args: argparse.Namespace) -> int:
+    from app.auth.service import set_password
+
+    def action(session, user) -> int:
+        password = (
+            _temporary_password() if args.temporary_password else _read_new_password(user.email)
+        )
+        if password is None:
+            return 2
+        set_password(session, user, password)
+        print("password set; the user is signed out everywhere")
+        if args.temporary_password:
+            print(f"temporary password (shown once): {password}")
+        return 0
+
+    return _with_user(args.email, action)
+
+
+def cmd_reset_2fa(args: argparse.Namespace) -> int:
+    from app.auth.service import reset_mfa
+
+    def action(session, user) -> int:
+        reset_mfa(session, user)
+        print("authenticator removed; a new one is set up at the next sign-in")
+        return 0
+
+    return _with_user(args.email, action)
+
+
+def cmd_set_active(args: argparse.Namespace) -> int:
+    from app.auth.service import revoke_all
+    from app.services.audit import record_event
+
+    def action(session, user) -> int:
+        user.is_active = args.active
+        if not args.active:
+            revoke_all(session, user)
+        user.failed_logins = 0
+        user.locked_until = None
+        record_event(session, action="user.enabled" if args.active else "user.disabled",
+                     entity_type="user", entity_id=user.id)  # fmt: skip
+        print("account enabled" if args.active else "account disabled and signed out")
+        return 0
+
+    return _with_user(args.email, action)
+
+
+def cmd_list_users(_: argparse.Namespace) -> int:
+    from app.models import Institution, User
+
+    db = _database()
+    with db.session_factory() as session:
+        rows = session.execute(
+            select(User, Institution.slug).outerjoin(Institution).order_by(User.email)
+        ).all()
+        for u, slug in rows:
+            flags = [u.role.value, slug or "-", "active" if u.is_active else "DISABLED",
+                     "2fa" if u.totp_enabled_at else "2fa-not-set-up"]  # fmt: skip
+            print(f"{u.email:40} " + "  ".join(flags))
+        if not rows:
+            print("no users")
+    db.dispose()
+    return 0
+
+
 def _storage(settings):
     from app.storage import EncryptedLocalStorage
 
@@ -599,6 +749,36 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("validation-report", help="Open issues by type and severity (counts)")
     p.set_defaults(func=cmd_validation_report)
+
+    p = sub.add_parser("create-user", help="Create a staff account")
+    p.add_argument("email")
+    p.add_argument("--name", required=True)
+    p.add_argument("--role", required=True,
+                   choices=["verifier", "institution_admin", "platform_admin"])  # fmt: skip
+    p.add_argument("--institution", default="cdac-kharghar", help="Institution slug")
+    p.add_argument("--temporary-password", action="store_true",
+                   help="Generate a password and print it once instead of asking")  # fmt: skip
+    p.set_defaults(func=cmd_create_user)
+
+    p = sub.add_parser("set-password", help="Set a user's password (signs them out)")
+    p.add_argument("email")
+    p.add_argument("--temporary-password", action="store_true")
+    p.set_defaults(func=cmd_set_password)
+
+    p = sub.add_parser("reset-2fa", help="Remove a user's authenticator (lost phone)")
+    p.add_argument("email")
+    p.set_defaults(func=cmd_reset_2fa)
+
+    p = sub.add_parser("disable-user", help="Disable an account and sign it out")
+    p.add_argument("email")
+    p.set_defaults(func=cmd_set_active, active=False)
+
+    p = sub.add_parser("enable-user", help="Re-enable an account (also clears a lockout)")
+    p.add_argument("email")
+    p.set_defaults(func=cmd_set_active, active=True)
+
+    p = sub.add_parser("list-users", help="List accounts (no secrets)")
+    p.set_defaults(func=cmd_list_users)
 
     p = sub.add_parser("classify", help="Classify OCR'd pages (type, semester, level)")
     p.add_argument("--force", action="store_true", help="Re-classify even if up to date")

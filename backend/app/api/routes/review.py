@@ -1,50 +1,55 @@
 """Read-only review API for the verifier dashboard.
 
-There is no sign-in yet (Phase 9), so these routes answer only requests from this machine,
-and never in production. Opening a submission or a page image is recorded in the audit log.
+Signed-in staff only (password + authenticator code). Verifiers and institution admins see
+their own institution's applicants; platform admins see all. Another institution's records
+answer 404, exactly like missing ones. Every opened applicant and page image is audited.
 """
 
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_app_settings, get_db_session, get_storage
-from app.core.config import Settings
+from app.api.deps import get_db_session, get_storage, require_staff
+from app.models import User
+from app.models.enums import UserRole
 from app.review import queries
 from app.services.audit import record_event
 from app.storage import ObjectStorage
 
-LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+def scope(user: User) -> uuid.UUID | None:
+    """Institution whose records the user may see; None = all (platform admin only)."""
+    if user.role == UserRole.PLATFORM_ADMIN:
+        return None
+    if user.institution_id is None:  # misconfigured account: never "everything"
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Your account has no institution.")
+    return user.institution_id
 
 
-def local_only(request: Request, settings: Annotated[Settings, Depends(get_app_settings)]) -> None:
-    host = request.client.host if request.client else None
-    if settings.environment == "production" or host not in LOCAL_HOSTS:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "The review dashboard is only available on this machine."
-        )
-
-
-router = APIRouter(prefix="/review", dependencies=[Depends(local_only)])
+router = APIRouter(prefix="/review")
 DbSession = Annotated[Session, Depends(get_db_session)]
+Staff = Annotated[User, Depends(require_staff())]
 PRIVATE = {"Cache-Control": "private, no-store"}
 
 
 @router.get("/submissions")
-def list_submissions(db: DbSession, response: Response) -> list[dict]:
+def list_submissions(user: Staff, db: DbSession, response: Response) -> list[dict]:
     response.headers.update(PRIVATE)
-    return queries.submission_list(db)
+    return queries.submission_list(db, scope(user))
 
 
 @router.get("/submissions/{submission_id}")
-def get_submission(submission_id: uuid.UUID, db: DbSession, response: Response) -> dict:
-    detail = queries.submission_detail(db, submission_id)
+def get_submission(
+    submission_id: uuid.UUID, user: Staff, db: DbSession, response: Response
+) -> dict:
+    detail = queries.submission_detail(db, submission_id, scope(user))
     if detail is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
     record_event(db, action="submission.viewed", entity_type="submission",
-                 entity_id=submission_id)  # fmt: skip
+                 entity_id=submission_id, actor_user_id=user.id,
+                 institution_id=user.institution_id)  # fmt: skip
     db.commit()
     response.headers.update(PRIVATE)
     return detail
@@ -52,11 +57,15 @@ def get_submission(submission_id: uuid.UUID, db: DbSession, response: Response) 
 
 @router.get("/pages/{page_id}/image")
 def get_page_image(
-    page_id: uuid.UUID, db: DbSession, storage: Annotated[ObjectStorage, Depends(get_storage)]
+    page_id: uuid.UUID,
+    user: Staff,
+    db: DbSession,
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> Response:
-    data = queries.page_image(db, storage, page_id)
+    data = queries.page_image(db, storage, page_id, scope(user))
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Page image not found")
-    record_event(db, action="page_image.viewed", entity_type="document_page", entity_id=page_id)
+    record_event(db, action="page_image.viewed", entity_type="document_page", entity_id=page_id,
+                 actor_user_id=user.id, institution_id=user.institution_id)  # fmt: skip
     db.commit()
     return Response(data, media_type="image/jpeg", headers=PRIVATE)

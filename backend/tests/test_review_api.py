@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.security import load_storage_key
-from app.main import create_app
 from app.models import (
     AuditEvent,
     Document,
@@ -19,11 +18,12 @@ from app.models import (
     PageOcr,
     ValidationIssue,
 )
-from app.models.enums import IssueSeverity, IssueStatus, OcrStatus
+from app.models.enums import IssueSeverity, IssueStatus, OcrStatus, UserRole
 from app.seeds.document_types import seed_document_types
 from app.services.files import store_file
 from app.storage import EncryptedLocalStorage
-from tests.factories import make_stored_file, make_submission
+from tests.auth_helpers import CSRF, make_user, sign_in
+from tests.factories import make_institution, make_stored_file, make_submission
 
 API = "/api/v1/review"
 
@@ -100,11 +100,19 @@ def seeded(session: Session, test_settings: Settings) -> dict:
         )
     )
     session.commit()
-    return {"sub": str(sub.id), "page": str(page.id)}
+    make_user(session, "verifier@cdac.test", institution_id=sub.applicant.institution_id)
+    return {"sub": str(sub.id), "page": str(page.id), "inst": sub.applicant.institution_id}
 
 
-def test_list_shows_verdict_from_open_issues_only(client: TestClient, seeded: dict) -> None:
-    resp = client.get(f"{API}/submissions")
+@pytest.fixture
+def staff(client: TestClient, seeded: dict) -> TestClient:
+    """The client, signed in as a verifier of the seeded institution."""
+    sign_in(client, "verifier@cdac.test")
+    return client
+
+
+def test_list_shows_verdict_from_open_issues_only(staff: TestClient, seeded: dict) -> None:
+    resp = staff.get(f"{API}/submissions")
     assert resp.status_code == 200 and resp.headers["cache-control"] == "private, no-store"
     [row] = resp.json()
     assert row["id"] == seeded["sub"] and row["name"] == "Asha Patil"
@@ -113,9 +121,9 @@ def test_list_shows_verdict_from_open_issues_only(client: TestClient, seeded: di
 
 
 def test_detail_has_pages_fields_and_boxes_relative_to_the_upright_page(
-    client: TestClient, seeded: dict, session: Session
+    staff: TestClient, seeded: dict, session: Session
 ) -> None:
-    body = client.get(f"{API}/submissions/{seeded['sub']}").json()
+    body = staff.get(f"{API}/submissions/{seeded['sub']}").json()
     assert body["verdict"] == "review"
     assert [i["status"] for i in body["issues"]] == ["open", "dismissed"]  # open first
     assert "key" not in body["issues"][0]["details"]  # internal bookkeeping hidden
@@ -124,33 +132,58 @@ def test_detail_has_pages_fields_and_boxes_relative_to_the_upright_page(
     assert page["type"] == "semester_marksheet" and page["ocr"]["rotation"] == 90
     [field] = page["fields"]
     assert field["box"] == {"x": 0.1, "y": 0.25, "w": 0.2, "h": 0.02}
-    events = session.scalars(select(AuditEvent).where(AuditEvent.action == "submission.viewed"))
-    assert len(events.all()) == 1
+    [event] = session.scalars(select(AuditEvent).where(AuditEvent.action == "submission.viewed"))
+    assert event.actor_user_id is not None  # who looked is recorded
 
 
-def test_page_image_is_upright_web_jpeg(client: TestClient, seeded: dict, session: Session) -> None:
-    resp = client.get(f"{API}/pages/{seeded['page']}/image")
+def test_page_image_is_upright_web_jpeg(staff: TestClient, seeded: dict, session: Session) -> None:
+    resp = staff.get(f"{API}/pages/{seeded['page']}/image")
     assert resp.status_code == 200 and resp.headers["content-type"] == "image/jpeg"
     img = Image.open(io.BytesIO(resp.content))
     assert img.size == (800, 1600)  # turned 90 degrees, long side capped at 1600
     assert session.scalar(select(AuditEvent).where(AuditEvent.action == "page_image.viewed"))
 
 
-def test_unknown_ids_are_404(client: TestClient, database) -> None:
+def test_unknown_ids_are_404(staff: TestClient) -> None:
     missing = "00000000-0000-0000-0000-000000000000"
-    assert client.get(f"{API}/submissions/{missing}").status_code == 404
-    assert client.get(f"{API}/pages/{missing}/image").status_code == 404
-    assert client.get(f"{API}/submissions/not-a-uuid").status_code == 422
+    assert staff.get(f"{API}/submissions/{missing}").status_code == 404
+    assert staff.get(f"{API}/pages/{missing}/image").status_code == 404
+    assert staff.get(f"{API}/submissions/not-a-uuid").status_code == 422
 
 
-def test_refused_in_production_until_sign_in_exists(test_settings: Settings) -> None:
-    prod = test_settings.model_copy(update={"environment": "production"})
-    with TestClient(create_app(prod)) as c:
-        resp = c.get(f"{API}/submissions")
-    assert resp.status_code == 403
+def test_requires_full_sign_in(client: TestClient, seeded: dict) -> None:
+    assert client.get(f"{API}/submissions").status_code == 401
+    client.post(
+        "/api/v1/auth/login",
+        json={"email": "verifier@cdac.test", "password": "correct horse battery"},
+        headers=CSRF,
+    )
+    assert client.get(f"{API}/submissions").status_code == 401  # authenticator code still due
+    assert client.get(f"{API}/pages/{seeded['page']}/image").status_code == 401
 
 
-def test_refused_from_other_machines(test_settings: Settings, database) -> None:
-    with TestClient(create_app(test_settings), client=("192.168.1.20", 5000)) as c:
-        assert c.get(f"{API}/submissions").status_code == 403
-        assert c.get("/api/v1/health").status_code == 200  # other routes unaffected
+def test_other_institutions_records_look_missing(
+    client: TestClient, seeded: dict, session: Session
+) -> None:
+    other = make_institution(session, slug="other-college")
+    make_user(session, "v@other.test", institution_id=other.id)
+    sign_in(client, "v@other.test")
+    assert client.get(f"{API}/submissions").json() == []
+    assert client.get(f"{API}/submissions/{seeded['sub']}").status_code == 404
+    assert client.get(f"{API}/pages/{seeded['page']}/image").status_code == 404
+
+
+def test_platform_admin_sees_all_institutions(
+    client: TestClient, seeded: dict, session: Session
+) -> None:
+    make_user(session, "admin@platform.test", role=UserRole.PLATFORM_ADMIN)
+    sign_in(client, "admin@platform.test")
+    assert [r["id"] for r in client.get(f"{API}/submissions").json()] == [seeded["sub"]]
+
+
+def test_account_without_institution_sees_nothing(
+    client: TestClient, seeded: dict, session: Session
+) -> None:
+    make_user(session, "lost@cdac.test", institution_id=None)  # verifier, misconfigured
+    sign_in(client, "lost@cdac.test")
+    assert client.get(f"{API}/submissions").status_code == 403

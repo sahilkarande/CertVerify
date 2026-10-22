@@ -23,6 +23,7 @@ Data/
 # Node (frontend, later phases)
 node_modules/
 dist/
+*.tsbuildinfo
 
 # Editors / OS / local tooling
 .claude/

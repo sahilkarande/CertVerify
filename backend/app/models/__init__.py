@@ -6,7 +6,7 @@ from app.models.imports import ImportFileRef
 from app.models.ocr import PageOcr
 from app.models.registry import DocumentType, RequirementItem, RequirementSet
 from app.models.review import AuditEvent, ValidationIssue
-from app.models.tenancy import Institution, User
+from app.models.tenancy import Institution, User, UserSession
 
 __all__ = [
     "Applicant",
@@ -23,5 +23,6 @@ __all__ = [
     "StoredFile",
     "Submission",
     "User",
+    "UserSession",
     "ValidationIssue",
 ]

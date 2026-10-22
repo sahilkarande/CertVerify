@@ -49,3 +49,13 @@ def session(database: Database) -> Iterator[Session]:
 @pytest.fixture
 def storage(tmp_path: Path) -> EncryptedLocalStorage:
     return EncryptedLocalStorage(tmp_path / "blobs", os.urandom(32))
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits() -> Iterator[None]:
+    """Rate limiters are per process; keep tests independent."""
+    from app.api.routes.auth import CODE_LIMIT, LOGIN_LIMIT
+
+    LOGIN_LIMIT.reset()
+    CODE_LIMIT.reset()
+    yield
