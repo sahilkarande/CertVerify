@@ -27,7 +27,8 @@ class User(IdMixin, TimestampMixin, Base):
     email: Mapped[str] = mapped_column(String(320), unique=True)  # stored lower-cased
     full_name: Mapped[str] = mapped_column(String(255))
     role: Mapped[UserRole] = mapped_column(str_enum(UserRole))
-    # Null only for platform admins; everyone else belongs to exactly one tenant.
+    # Staff belong to one tenant (null for platform admins). Students are platform-wide:
+    # their applications (Applicant rows) belong to institutions instead.
     institution_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("institutions.id", ondelete="RESTRICT"), index=True
     )
@@ -66,3 +67,18 @@ class UserSession(IdMixin, Base):
     user_agent: Mapped[str | None] = mapped_column(String(255))
 
     user: Mapped[User] = relationship()
+
+
+class LoginCode(IdMixin, Base):
+    """A one-time sign-in code emailed to a student. Only a keyed hash is stored; a code
+    is single-use, expires quickly and allows a few wrong guesses."""
+
+    __tablename__ = "login_codes"
+
+    email: Mapped[str] = mapped_column(String(320), index=True)  # lower-cased
+    code_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(default=0)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ip: Mapped[str | None] = mapped_column(String(45))

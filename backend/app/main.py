@@ -17,6 +17,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.core.security import load_storage_key
 from app.db.session import Database
+from app.notify.email import build_sender
 from app.storage import EncryptedLocalStorage
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     master_key = load_storage_key(settings)
     app.state.storage = EncryptedLocalStorage(settings.storage_dir, master_key)
     app.state.totp_key = derive_key(master_key)
+    app.state.code_key = derive_key(master_key, "login-code")
+    app.state.email = build_sender(settings)
     app.add_middleware(SecurityMiddleware)
 
     app.include_router(api_router, prefix=settings.api_prefix)

@@ -44,6 +44,16 @@ class Settings(BaseSettings):
             return self.session_cookie_secure
         return self.environment == "production"
 
+    # Outgoing email (student sign-in codes). "outbox" writes messages to files on this
+    # machine for development; "smtp" sends them (e.g. Gmail with an app password).
+    email_backend: Literal["outbox", "smtp"] = "outbox"
+    email_from: str = "CertVerify <no-reply@certverify.local>"
+    outbox_dir: Path = BACKEND_DIR / "data" / "outbox"
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587  # STARTTLS
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+
     # Seed-data importer: Google OAuth client (downloaded from Google Cloud) and the saved
     # sign-in token. Both live in the git-ignored data directory.
     google_client_secret_file: Path = BACKEND_DIR / "data" / "google_client_secret.json"

@@ -144,7 +144,7 @@ def process_document(
         stale = _drop_pages(db, doc)
         doc.status = DocumentStatus.FAILED
         doc.processing_error = exc.code
-        doc.processing_notes = {}
+        doc.processing_notes = {"error_message": exc.message}  # shown to the uploader
         result = ProcessResult(status=DocumentStatus.FAILED, error_code=exc.code)
     except Exception:
         db.rollback()

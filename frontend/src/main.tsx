@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
 import { SIGNED_OUT_EVENT, auth, type Me } from "./api";
 import ChangePassword from "./pages/ChangePassword";
+import Portal from "./pages/student/Portal";
 import SignIn from "./pages/SignIn";
 import SubmissionList from "./pages/SubmissionList";
 import SubmissionView from "./pages/SubmissionView";
@@ -33,6 +34,22 @@ function App() {
   if (!signedIn) return <SignIn me={me} onDone={setMe} />;
 
   const signOut = () => auth.logout().finally(() => setMe(null));
+  if (me.role === "student") {
+    return (
+      <BrowserRouter>
+        <header className="topbar">
+          <span className="brand">CertVerify</span>
+          <div className="user-menu">
+            <span className="small muted wrap">{me.email}</span>
+            <button className="link-button small" onClick={signOut}>Sign out</button>
+          </div>
+        </header>
+        <Routes>
+          <Route path="*" element={<Portal />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
   return (
     <BrowserRouter>
       <header className="topbar">

@@ -318,9 +318,9 @@ def test_upload_rejections(client: TestClient, signed_in: dict, monkeypatch) -> 
     assert _upload(client, sub, b"").status_code == 422
     assert _upload(client, sub, jpeg(), slot="no_such_slot").status_code == 422
     assert _upload(client, sub, jpeg(), headers={}).status_code == 403  # CSRF header missing
-    import app.api.routes.documents as docs
+    import app.portal.uploads as uploads
 
-    monkeypatch.setattr(docs, "MAX_UPLOAD_BYTES", 1000)
+    monkeypatch.setattr(uploads, "MAX_UPLOAD_BYTES", 1000)
     assert _upload(client, sub, jpeg()).status_code == 413
 
 

@@ -113,7 +113,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     } catch {
       /* not JSON */
     }
-    if (res.status === 401 && !url.startsWith(`${API}/auth/`)) {
+    if (res.status === 401 && !url.startsWith(`${API}/auth/`) && !url.startsWith(`${API}/student/auth/`)) {
       window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
     }
     throw new ApiError(res.status, detail);
@@ -183,3 +183,81 @@ export const uploadDocument = (submissionId: string, slot: string, file: File) =
 
 export const fetchDocumentStatus = (documentId: string) =>
   get<DocumentStatus>(`/documents/${documentId}/status`);
+
+// --- student portal --------------------------------------------------------------
+
+const SAPI = `${API}/student`;
+
+export interface Intake {
+  id: string;
+  name: string;
+  institution: string;
+}
+
+export interface StudentPage {
+  id: string;
+  number: number;
+  quality: string | null;
+  problems: string[];
+  has_image: boolean;
+}
+
+export interface StudentDocument {
+  id: string;
+  uploaded_at: string | null;
+  processing: boolean;
+  stage: string | null;
+  failed: boolean;
+  error_message: string | null;
+  recognised_as: string[];
+  pages: StudentPage[];
+}
+
+export interface ChecklistItem {
+  key: string;
+  label: string;
+  required: boolean;
+  expected: string[];
+  state: "missing" | "processing" | "attention" | "ok";
+  problems: string[];
+  documents: StudentDocument[];
+}
+
+export interface Answers {
+  full_name: string;
+  phone: string | null;
+  degree_status: string;
+  claimed_aggregate_percent: number;
+}
+
+export interface Application {
+  id: string;
+  intake: { id: string; name: string; institution: string | null };
+  status: string;
+  editable: boolean;
+  answers: Answers;
+  checklist: ChecklistItem[];
+  general_problems: string[];
+  ready_to_submit: boolean;
+}
+
+export const studentApi = {
+  requestCode: (email: string) =>
+    request<{ message: string }>("POST", `${SAPI}/auth/request-code`, { email }),
+  verifyCode: (email: string, code: string) =>
+    request<Me>("POST", `${SAPI}/auth/verify-code`, { email, code }),
+  intakes: () =>
+    request<{ intakes: Intake[]; degree_statuses: Record<string, string> }>("GET", `${SAPI}/intakes`),
+  application: (intakeId: string) => request<Application>("GET", `${SAPI}/applications/${intakeId}`),
+  saveAnswers: (intakeId: string, a: Answers) =>
+    request<Application>("PUT", `${SAPI}/applications/${intakeId}`, a),
+  upload: (intakeId: string, slot: string, file: File) => {
+    const form = new FormData();
+    form.append("slot", slot);
+    form.append("file", file);
+    return request<{ document_id: string }>("POST", `${SAPI}/applications/${intakeId}/documents`, form);
+  },
+  remove: (documentId: string) => request<void>("DELETE", `${SAPI}/documents/${documentId}`),
+  submit: (intakeId: string) => request<Application>("POST", `${SAPI}/applications/${intakeId}/submit`),
+  pageImageUrl: (pageId: string) => `${SAPI}/pages/${pageId}/image`,
+};

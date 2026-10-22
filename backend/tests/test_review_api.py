@@ -1,4 +1,5 @@
 import io
+import uuid
 
 import numpy as np
 import pytest
@@ -142,6 +143,17 @@ def test_page_image_is_upright_web_jpeg(staff: TestClient, seeded: dict, session
     img = Image.open(io.BytesIO(resp.content))
     assert img.size == (800, 1600)  # turned 90 degrees, long side capped at 1600
     assert session.scalar(select(AuditEvent).where(AuditEvent.action == "page_image.viewed"))
+
+
+def test_missing_stored_image_is_404_not_a_crash(
+    staff: TestClient, seeded: dict, session: Session, test_settings: Settings
+) -> None:
+    from app.models import StoredFile
+
+    page = session.get(DocumentPage, uuid.UUID(seeded["page"]))
+    key = session.get(StoredFile, page.image_file_id).object_key
+    EncryptedLocalStorage(test_settings.storage_dir, load_storage_key(test_settings)).delete(key)
+    assert staff.get(f"{API}/pages/{seeded['page']}/image").status_code == 404
 
 
 def test_unknown_ids_are_404(staff: TestClient) -> None:

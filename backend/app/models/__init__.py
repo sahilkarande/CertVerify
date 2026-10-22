@@ -7,7 +7,7 @@ from app.models.jobs import Job
 from app.models.ocr import PageOcr
 from app.models.registry import DocumentType, RequirementItem, RequirementSet
 from app.models.review import AuditEvent, ValidationIssue
-from app.models.tenancy import Institution, User, UserSession
+from app.models.tenancy import Institution, LoginCode, User, UserSession
 
 __all__ = [
     "Applicant",
@@ -18,6 +18,7 @@ __all__ = [
     "ExtractedField",
     "ImportFileRef",
     "Job",
+    "LoginCode",
     "Institution",
     "PageOcr",
     "RequirementItem",

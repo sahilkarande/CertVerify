@@ -156,7 +156,16 @@ def test_security_headers(client: TestClient) -> None:
 def test_cookie_secure_in_production(test_settings: Settings, database, session: Session) -> None:
     inst = make_institution(session)
     make_user(session, "asha@cdac.test", institution_id=inst.id)
-    prod = test_settings.model_copy(update={"environment": "production"})
+    from pydantic import SecretStr
+
+    prod = test_settings.model_copy(
+        update={
+            "environment": "production",
+            "email_backend": "smtp",
+            "smtp_username": "x@example.org",
+            "smtp_password": SecretStr("not-used"),
+        }
+    )
     with TestClient(create_app(prod), base_url="https://testserver") as c:
         r = login(c, "asha@cdac.test")
     assert "secure" in r.headers["set-cookie"].lower()
@@ -249,3 +258,9 @@ def test_session_older_than_a_password_change_is_refused(
     verifier.password_changed_at = utcnow()
     session.commit()
     assert client.get(f"{AUTH}/me").status_code == 401
+
+
+def test_production_refuses_the_dev_email_outbox(test_settings: Settings) -> None:
+    prod = test_settings.model_copy(update={"environment": "production"})
+    with pytest.raises(RuntimeError, match="SMTP"):
+        create_app(prod)

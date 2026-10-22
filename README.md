@@ -184,6 +184,32 @@ make frontend-build      # after changes to frontend/
 make run                 # then open http://127.0.0.1:8000/
 ```
 
+## Student portal
+
+Students open the same address and choose "I'm a student":
+1. They enter their email and get a 6-digit code by email. There is no password. The code works once, for 10 minutes,
+   with 5 tries.
+2. They answer a few questions (name, phone, degree status, aggregate %).
+3. They upload each required document from a checklist, with "Take photo" (phone camera) or "Choose file". The
+   checklist adapts to their answers; for example "awaiting provisional" asks for the final-semester marksheet.
+4. Each document is checked in the background, and its card shows "Looks good" or exactly what to fix ("The image is
+   too blurry…", "This document is missing…") within seconds.
+5. They can remove a wrong upload, and submit once every required document is there. Documents can still be replaced
+   until a verifier has decided.
+
+Applicants imported from the Google Form find their existing application by signing in with the same email.
+Students never see checks meant for verifiers (files or IDs shared with another applicant, claimed-percentage doubts).
+
+**Email:** during development, codes are written to `backend/data/outbox/*.eml` (readable only by you) instead of
+being sent. To send real email, for example from Gmail with a Google app password, put this in `backend/.env`:
+
+```
+CERTVERIFY_EMAIL_BACKEND=smtp
+CERTVERIFY_EMAIL_FROM=CertVerify <your.address@gmail.com>
+CERTVERIFY_SMTP_USERNAME=your.address@gmail.com
+CERTVERIFY_SMTP_PASSWORD=the 16-character app password
+```
+
 ## Background processing
 
 Uploaded documents are processed in the background by a worker:

@@ -2,6 +2,7 @@
 audit events recording who looked at what."""
 
 import io
+import logging
 import uuid
 from collections import Counter
 
@@ -25,7 +26,10 @@ from app.ocr.pipeline import preferred_readings
 from app.ocr.preprocess import OCR_SHORT_PX, rotate
 from app.services.files import read_file
 from app.storage import ObjectStorage
+from app.storage.base import StorageError
 from app.validate.engine import verdict
+
+logger = logging.getLogger(__name__)
 
 SEVERITY_ORDER = {IssueSeverity.ERROR: 0, IssueSeverity.WARNING: 1, IssueSeverity.INFO: 2}
 WEB_IMAGE_LONG_SIDE = 1600
@@ -194,7 +198,13 @@ def page_image(
         return None
     reading = preferred_readings(db, [page.id]).get(page.id)
     rotation = reading.rotation if reading else 0
-    img = Image.open(io.BytesIO(read_file(storage, page.image_file))).convert("RGB")
+    try:
+        raw = read_file(storage, page.image_file)
+    except StorageError as exc:
+        # Missing or failing its integrity check: never serve it, and make it visible.
+        logger.error("page image %s unavailable: %s", page.id, exc)
+        return None
+    img = Image.open(io.BytesIO(raw)).convert("RGB")
     if rotation:
         img = Image.fromarray(rotate(np.asarray(img), rotation))
     img.thumbnail((WEB_IMAGE_LONG_SIDE, WEB_IMAGE_LONG_SIDE))

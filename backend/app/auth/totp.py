@@ -15,12 +15,11 @@ ISSUER = "CertVerify"
 VALID_WINDOW = 1
 
 
-def derive_key(master_key: bytes) -> bytes:
-    """A separate key for authenticator secrets, derived from the storage master key
-    (one key per purpose: a flaw in one use cannot expose the other)."""
-    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"certverify-totp").derive(
-        master_key
-    )
+def derive_key(master_key: bytes, purpose: str = "totp") -> bytes:
+    """A separate key per purpose, derived from the storage master key (a flaw in one use
+    cannot expose the others)."""
+    info = f"certverify-{purpose}".encode()
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=info).derive(master_key)
 
 
 def new_secret() -> str:

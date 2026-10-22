@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { auth, type Me, type TotpSetup } from "../api";
+import StudentSignIn from "./student/StudentSignIn";
 
 /** Email + password, then the authenticator step (first-time setup or a code). */
 export default function SignIn({ me, onDone }: { me: Me | null; onDone: (me: Me) => void }) {
@@ -10,16 +11,29 @@ export default function SignIn({ me, onDone }: { me: Me | null; onDone: (me: Me)
       <SetupStep email={me.email} onDone={onDone} />
     );
   }
-  return <PasswordStep onDone={onDone} />;
+  return <ChooseSignIn onDone={onDone} />;
+}
+
+function ChooseSignIn({ onDone }: { onDone: (me: Me) => void }) {
+  const [mode, setMode] = useState<"student" | "staff">("student");
+  return (
+    <Card title={mode === "student" ? "Student sign in" : "Staff sign in"}>
+      <div className="tabs" role="tablist">
+        <button role="tab" aria-selected={mode === "student"} className={mode === "student" ? "active" : ""}
+          onClick={() => setMode("student")}>I'm a student</button>
+        <button role="tab" aria-selected={mode === "staff"} className={mode === "staff" ? "active" : ""}
+          onClick={() => setMode("staff")}>Staff</button>
+      </div>
+      {mode === "student" ? <StudentSignIn onDone={onDone} /> : <PasswordStep onDone={onDone} />}
+    </Card>
+  );
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <main className="auth-page">
       <div className="auth-card">
-        <div className="brand auth-brand">
-          CertVerify <span>Review</span>
-        </div>
+        <div className="brand auth-brand">CertVerify</div>
         <h1>{title}</h1>
         {children}
       </div>
@@ -50,22 +64,20 @@ function PasswordStep({ onDone }: { onDone: (me: Me) => void }) {
   const [password, setPassword] = useState("");
   const { error, busy, submit } = useSubmit(() => auth.login(email, password), onDone);
   return (
-    <Card title="Sign in">
-      <form onSubmit={submit} className="auth-form">
-        <label>
-          Email
-          <input type="email" autoComplete="username" required autoFocus value={email}
-            onChange={(e) => setEmail(e.target.value)} />
-        </label>
-        <label>
-          Password
-          <input type="password" autoComplete="current-password" required value={password}
-            onChange={(e) => setPassword(e.target.value)} />
-        </label>
-        {error && <p className="error-text small" role="alert">{error}</p>}
-        <button className="primary" disabled={busy}>{busy ? "Signing in…" : "Continue"}</button>
-      </form>
-    </Card>
+    <form onSubmit={submit} className="auth-form">
+      <label>
+        Email
+        <input type="email" autoComplete="username" required autoFocus value={email}
+          onChange={(e) => setEmail(e.target.value)} />
+      </label>
+      <label>
+        Password
+        <input type="password" autoComplete="current-password" required value={password}
+          onChange={(e) => setPassword(e.target.value)} />
+      </label>
+      {error && <p className="error-text small" role="alert">{error}</p>}
+      <button className="primary" disabled={busy}>{busy ? "Signing in…" : "Continue"}</button>
+    </form>
   );
 }
 

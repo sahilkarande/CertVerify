@@ -23,6 +23,7 @@ def test_settings(tmp_path: Path) -> Settings:
         database_url=f"sqlite:///{tmp_path / 'test.db'}",
         storage_dir=tmp_path / "storage",
         storage_key=generate_key(),
+        outbox_dir=tmp_path / "outbox",
     )
 
 
@@ -56,7 +57,15 @@ def _reset_rate_limits() -> Iterator[None]:
     """Rate limiters are per process; keep tests independent."""
     from app.api.routes.auth import CODE_LIMIT, LOGIN_LIMIT
     from app.api.routes.documents import UPLOAD_LIMIT
+    from app.api.routes.student import CODE_GUESSES, CODE_REQUESTS, STUDENT_UPLOADS
 
-    for limiter in (LOGIN_LIMIT, CODE_LIMIT, UPLOAD_LIMIT):
+    for limiter in (
+        LOGIN_LIMIT,
+        CODE_LIMIT,
+        UPLOAD_LIMIT,
+        CODE_REQUESTS,
+        CODE_GUESSES,
+        STUDENT_UPLOADS,
+    ):
         limiter.reset()
     yield
