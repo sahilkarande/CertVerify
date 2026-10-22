@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user
+.PHONY: setup run test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user worker enqueue queue-status
 
 setup:
 	python3 -m venv $(VENV)
@@ -143,3 +143,16 @@ disable-user:
 
 enable-user:
 	cd backend && .venv/bin/python -m app.cli enable-user "$(email)"
+
+# --- Background processing (Phase 10) ---
+# Processes uploaded/queued documents: quality -> OCR -> classify -> extract -> validate.
+# Run alongside `make run`; Ctrl+C finishes the current document, then stops.
+worker:
+	cd backend && .venv/bin/python -m app.jobs.worker
+
+# Queue documents for the worker: out-of-date ones, or everything with all=1
+enqueue:
+	cd backend && .venv/bin/python -m app.cli enqueue $(if $(all),--all)
+
+queue-status:
+	cd backend && .venv/bin/python -m app.cli queue-status

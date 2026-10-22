@@ -178,6 +178,16 @@ def test_form_name_found_despite_ocr_damage() -> None:
     assert match_form_name("GADHE FOOJA", "Pooja Gadhe") == ("GADHE POOJA", 2, 2)
 
 
+def test_partial_match_keeps_the_printed_spelling() -> None:
+    # "ASHA" is close to the form's "AASTHA", but the other form words are absent: this may
+    # be someone else's document, so the name must stay exactly as printed.
+    got = extract_page(
+        page(("NAME", 100, 300, 50), ("TESTER ASHA RAMESH", 200, 300)),
+        applicant_name="Aastha Satishrao Kulkarni",
+    )
+    assert got["candidate_name"].value == "TESTER ASHA RAMESH"
+
+
 def test_name_differing_from_the_form_is_kept_for_review() -> None:
     got = extract_page(page(("Name of Student", 100, 300, 160), ("RAHUL VERMA", 300, 300)),
                        applicant_name="Asha Patil")  # fmt: skip

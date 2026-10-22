@@ -184,6 +184,28 @@ make frontend-build      # after changes to frontend/
 make run                 # then open http://127.0.0.1:8000/
 ```
 
+## Background processing
+
+Uploaded documents are processed in the background by a worker:
+quality check → OCR (Tesseract rotation + PaddleOCR reading) → classification → extraction → validation.
+The queue is a table in the database, so there is no extra service to install.
+
+```bash
+make run            # terminal 1: web app + API
+make worker         # terminal 2: processes queued documents (Ctrl+C finishes the current one, then stops)
+make enqueue        # queue documents whose processing is out of date (all=1: everything)
+make queue-status   # job counts, and failures by error type
+```
+
+- Staff can add a document to an applicant on the review screen ("Add a document"), and its progress is shown live.
+- Upload rules:
+  - At most 10 MB.
+  - PDF, JPEG, PNG, HEIC or WEBP, detected from the file content (names and extensions are not trusted).
+  - At most 40 pages and 60 megapixels per image.
+- Failed steps are retried after 30 s and then 5 min. After 3 failed attempts the job is marked failed.
+- A worker that crashes or sleeps leaves its job to another worker after 10 minutes.
+- An unreadable file is not retried: it becomes a "file unreadable" issue for the uploader to fix.
+
 ## Staff accounts and sign-in
 
 Staff sign in with email + password, then a 6-digit code from an authenticator app (Google/Microsoft Authenticator,

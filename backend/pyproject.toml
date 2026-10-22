@@ -27,6 +27,8 @@ dependencies = [
     "argon2-cffi>=23.1",
     "pyotp>=2.9",
     "segno>=1.6",
+    # File uploads (multipart form data)
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

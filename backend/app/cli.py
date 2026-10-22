@@ -417,8 +417,10 @@ def cmd_extract(args: argparse.Namespace) -> int:
         session.commit()
     db.dispose()
     print(f"extracted: {len(ids)} pages, {stored} fields in {time.perf_counter() - started:.0f}s")
-    print("required fields not found: "
-          + (", ".join(f"{k}={v}" for k, v in missing.most_common()) or "none"))  # fmt: skip
+    print(
+        "required fields not found: "
+        + (", ".join(f"{k}={v}" for k, v in missing.most_common()) or "none")
+    )
     return 0
 
 
@@ -485,10 +487,14 @@ def cmd_validation_report(_: argparse.Namespace) -> int:
     db = _database()
     with db.session_factory() as session:
         rows = session.execute(
-            select(ValidationIssue.severity, ValidationIssue.code, ValidationIssue.status,
-                   func.count(func.distinct(ValidationIssue.submission_id)), func.count())
-            .group_by(ValidationIssue.severity, ValidationIssue.code, ValidationIssue.status)
-        ).all()  # fmt: skip
+            select(
+                ValidationIssue.severity,
+                ValidationIssue.code,
+                ValidationIssue.status,
+                func.count(func.distinct(ValidationIssue.submission_id)),
+                func.count(),
+            ).group_by(ValidationIssue.severity, ValidationIssue.code, ValidationIssue.status)
+        ).all()
     db.dispose()
     print("severity  issue                                    status     students  issues")
     order = {"error": 0, "warning": 1, "info": 2}
@@ -557,8 +563,14 @@ def cmd_create_user(args: argparse.Namespace) -> int:
         )
         session.add(user)
         session.flush()
-        record_event(session, action="user.created", entity_type="user", entity_id=user.id,
-                     institution_id=user.institution_id, details={"role": role.value})  # fmt: skip
+        record_event(
+            session,
+            action="user.created",
+            entity_type="user",
+            entity_id=user.id,
+            institution_id=user.institution_id,
+            details={"role": role.value},
+        )
         session.commit()
     db.dispose()
     print(f"created {role.value} account; the authenticator app is set up at first sign-in")
@@ -621,8 +633,12 @@ def cmd_set_active(args: argparse.Namespace) -> int:
             revoke_all(session, user)
         user.failed_logins = 0
         user.locked_until = None
-        record_event(session, action="user.enabled" if args.active else "user.disabled",
-                     entity_type="user", entity_id=user.id)  # fmt: skip
+        record_event(
+            session,
+            action="user.enabled" if args.active else "user.disabled",
+            entity_type="user",
+            entity_id=user.id,
+        )
         print("account enabled" if args.active else "account disabled and signed out")
         return 0
 
@@ -638,12 +654,58 @@ def cmd_list_users(_: argparse.Namespace) -> int:
             select(User, Institution.slug).outerjoin(Institution).order_by(User.email)
         ).all()
         for u, slug in rows:
-            flags = [u.role.value, slug or "-", "active" if u.is_active else "DISABLED",
-                     "2fa" if u.totp_enabled_at else "2fa-not-set-up"]  # fmt: skip
+            flags = [
+                u.role.value,
+                slug or "-",
+                "active" if u.is_active else "DISABLED",
+                "2fa" if u.totp_enabled_at else "2fa-not-set-up",
+            ]
             print(f"{u.email:40} " + "  ".join(flags))
         if not rows:
             print("no users")
     db.dispose()
+    return 0
+
+
+def cmd_enqueue(args: argparse.Namespace) -> int:
+    from app.intake.pipeline import PROCESSING_VERSION
+    from app.jobs.queue import enqueue_document
+    from app.models import Document
+
+    db = _database()
+    with db.session_factory() as session:
+        q = select(Document.id).order_by(Document.created_at)
+        if not args.all:
+            q = q.where(
+                Document.processing_version.is_(None)
+                | (Document.processing_version != PROCESSING_VERSION)
+            )
+        ids = list(session.scalars(q))
+        for doc_id in ids:
+            enqueue_document(session, doc_id)
+        session.commit()
+    db.dispose()
+    print(f"queued {len(ids)} documents (start a worker with: make worker)")
+    return 0
+
+
+def cmd_queue_status(_: argparse.Namespace) -> int:
+    from app.jobs.queue import queue_counts
+    from app.models import Job
+    from app.models.enums import JobStatus
+
+    db = _database()
+    with db.session_factory() as session:
+        counts = queue_counts(session)
+        failed = session.execute(
+            select(Job.last_error, func.count())
+            .where(Job.status == JobStatus.FAILED)
+            .group_by(Job.last_error)
+        ).all()
+    db.dispose()
+    print("jobs: " + (", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "none"))
+    if failed:
+        print("failed: " + ", ".join(f"{e}={n}" for e, n in failed))
     return 0
 
 
@@ -753,11 +815,15 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("create-user", help="Create a staff account")
     p.add_argument("email")
     p.add_argument("--name", required=True)
-    p.add_argument("--role", required=True,
-                   choices=["verifier", "institution_admin", "platform_admin"])  # fmt: skip
+    p.add_argument(
+        "--role", required=True, choices=["verifier", "institution_admin", "platform_admin"]
+    )
     p.add_argument("--institution", default="cdac-kharghar", help="Institution slug")
-    p.add_argument("--temporary-password", action="store_true",
-                   help="Generate a password and print it once instead of asking")  # fmt: skip
+    p.add_argument(
+        "--temporary-password",
+        action="store_true",
+        help="Generate a password and print it once instead of asking",
+    )
     p.set_defaults(func=cmd_create_user)
 
     p = sub.add_parser("set-password", help="Set a user's password (signs them out)")
@@ -779,6 +845,13 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("list-users", help="List accounts (no secrets)")
     p.set_defaults(func=cmd_list_users)
+
+    p = sub.add_parser("enqueue", help="Queue documents for background processing")
+    p.add_argument("--all", action="store_true", help="Every document, not only out-of-date ones")
+    p.set_defaults(func=cmd_enqueue)
+
+    p = sub.add_parser("queue-status", help="Background job counts")
+    p.set_defaults(func=cmd_queue_status)
 
     p = sub.add_parser("classify", help="Classify OCR'd pages (type, semester, level)")
     p.add_argument("--force", action="store_true", help="Re-classify even if up to date")

@@ -18,7 +18,7 @@ from app.models.enums import DocumentCategory, FieldSource
 from app.ocr.pipeline import preferred_readings
 
 # Bump when finders or confidence rules change so pages are re-extracted.
-EXTRACTOR_VERSION = 2
+EXTRACTOR_VERSION = 3
 
 # Values the classifier already determined.
 FROM_CLASSIFICATION = {"semester"}

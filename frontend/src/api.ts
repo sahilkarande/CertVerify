@@ -98,11 +98,12 @@ export const SIGNED_OUT_EVENT = "certverify:signed-out";
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (method !== "GET") headers["X-Requested-With"] = "CertVerify"; // CSRF guard (backend)
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const isForm = body instanceof FormData;
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
   const res = await fetch(url, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     credentials: "same-origin",
   });
   if (!res.ok) {
@@ -156,3 +157,29 @@ export const auth = {
   changePassword: (current_password: string, new_password: string) =>
     request<{ ok: boolean }>("POST", `${API}/auth/password`, { current_password, new_password }),
 };
+
+
+// --- uploads & background processing ---------------------------------------------
+
+export type JobStage =
+  | "waiting" | "quality" | "reading" | "classifying" | "extracting" | "validating" | "done";
+
+export interface DocumentStatus {
+  document_id: string;
+  document_status: string;
+  processing_error: string | null;
+  job: { status: string; stage: JobStage; attempts: number; error: string | null; finished: boolean } | null;
+  pages: { number: number; quality: string | null; reasons: string[] }[];
+}
+
+export const uploadDocument = (submissionId: string, slot: string, file: File) => {
+  const form = new FormData();
+  form.append("slot", slot);
+  form.append("file", file);
+  return request<{ document_id: string; job_id: string }>(
+    "POST", `${BASE}/submissions/${submissionId}/documents`, form,
+  );
+};
+
+export const fetchDocumentStatus = (documentId: string) =>
+  get<DocumentStatus>(`/documents/${documentId}/status`);

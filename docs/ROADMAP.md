@@ -34,7 +34,7 @@ degree certificates) and grows into a global product.
 | API | Python 3.12, FastAPI, Pydantic |
 | Database | SQLite (dev) → PostgreSQL; SQLAlchemy 2.0 + Alembic |
 | File storage | Storage interface: encrypted local disk (dev) → S3-compatible (MinIO/S3) |
-| Background jobs | Redis + worker queue (RQ/Celery), introduced when processing goes async |
+| Background jobs | Database-backed queue + worker process (Phase 10); Redis only if many machines are needed |
 | Imaging / OCR | pypdfium2 (permissive licence; PyMuPDF is AGPL), OpenCV, Pillow + pillow-heif, Tesseract 5 (rotation, fallback) + PaddleOCR PP-OCRv6 (main reading; separate worker process and venv) |
 | Intelligence | Rules + registry config first; ML classifier and layout-aware extraction model trained on collected labels; local LLM (Ollama) as fallback |
 | Frontend | React + TypeScript + Vite (student portal and verifier console) |
@@ -63,7 +63,7 @@ degree certificates) and grows into a global product.
 | # | Phase | Delivers |
 |---|---|---|
 | 9 | Authentication & security ✅ (staff) | Accounts, OTP, sessions, RBAC, tenant isolation, rate limiting, upload hardening, audit of every access. Done for staff: Argon2id passwords + authenticator-app 2FA (chosen over email codes: works offline, no mail server), server-side revocable sessions (chosen over JWT so sign-out/disable/password change take effect at once), lockout + per-address limits, CSRF header, security headers/CSP, roles + tenant isolation on the review API, audited access, account CLI. Student sign-in (email OTP) moves to Phase 11 with the portal; upload hardening to Phase 10/11 with the upload endpoint |
-| 10 | Async processing pipeline | Redis worker queue; upload → quick checks (seconds) → OCR/classify/extract/validate in the background; live status to the browser |
+| 10 | Async processing pipeline ✅ | Redis worker queue; upload → quick checks (seconds) → OCR/classify/extract/validate in the background; live status to the browser. Done with a database queue instead of Redis (user's choice: nothing to install, jobs saved with the data; atomic leased claims allow several workers): staff upload endpoint with size/type/page/pixel limits, worker with retries/back-off and crash takeover, live stage display. Measured: a real 1-page 12th marksheet has its quality verdict in ~3 s and is fully processed in ~14 s on this laptop |
 | 11 | Student portal | Guided checklist per requirement set; drag-and-drop or phone-camera upload; instant quality feedback; review of extracted data; clear "what to fix" messages |
 | 12 | Verifier console | Queue with issue badges; document viewer next to the extracted fields; correct, approve or reject; message the student; every correction saved as a training label. Read-only part built early (after Phase 8): applicant list with verdicts, issues, upright pages with extracted values outlined by confidence; local-only until Phase 9 |
 | 13 | Learning loop & universal types | Dataset export from corrections; train an ML classifier and then a layout-aware extractor; model versioning and evaluation; add a new document type from the admin UI |

@@ -55,7 +55,8 @@ def storage(tmp_path: Path) -> EncryptedLocalStorage:
 def _reset_rate_limits() -> Iterator[None]:
     """Rate limiters are per process; keep tests independent."""
     from app.api.routes.auth import CODE_LIMIT, LOGIN_LIMIT
+    from app.api.routes.documents import UPLOAD_LIMIT
 
-    LOGIN_LIMIT.reset()
-    CODE_LIMIT.reset()
+    for limiter in (LOGIN_LIMIT, CODE_LIMIT, UPLOAD_LIMIT):
+        limiter.reset()
     yield

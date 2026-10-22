@@ -88,3 +88,22 @@ class IssueStatus(StrEnum):
     OPEN = "open"
     RESOLVED = "resolved"
     DISMISSED = "dismissed"
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class JobStage(StrEnum):
+    """Where a document is in the processing pipeline (shown to the uploader)."""
+
+    WAITING = "waiting"
+    QUALITY = "quality"  # opening the file, rendering pages, quality checks
+    READING = "reading"  # OCR
+    CLASSIFYING = "classifying"
+    EXTRACTING = "extracting"
+    VALIDATING = "validating"
+    DONE = "done"

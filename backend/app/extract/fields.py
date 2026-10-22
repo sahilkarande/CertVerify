@@ -353,9 +353,12 @@ def known_name(layout: Layout, full_name: str) -> Candidate | None:
             continue
         lo, hi = min(hits), max(hits)
         tail = clean_name(" ".join(words[hi + 1 :]), max_tokens=2)
-        value, matched, total = match_form_name(
-            clean_name(" ".join(words[lo : hi + 1]) + (" " + tail if tail else "")), full_name
-        )
+        printed = clean_name(" ".join(words[lo : hi + 1]) + (" " + tail if tail else ""))
+        fixed, matched, total = match_form_name(printed, full_name)
+        # Spellings are corrected to the form's only when every form word was found (same
+        # person, OCR slips); otherwise the value stays as printed, so a different name is
+        # never made to look like the applicant's.
+        value = fixed if matched == total else printed
         coverage = matched / total
         if coverage < 0.66:
             continue
@@ -376,7 +379,9 @@ def names(layout: Layout, applicant_name: str | None) -> dict[str, Candidate]:
     ]
     by_label = best(labelled_names)
     if by_label and applicant_name:
-        by_label.value, matched, total = match_form_name(by_label.value, applicant_name)
+        fixed, matched, total = match_form_name(by_label.value, applicant_name)
+        if matched == total:  # see known_name: correct spellings only for a full match
+            by_label.value = fixed
         by_label.evidence.append(f"form_name_match:{matched}/{total}")
     if from_form and from_form.confidence >= 0.95:
         out["candidate_name"] = from_form

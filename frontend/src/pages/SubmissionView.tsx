@@ -9,6 +9,7 @@ import {
   type Page,
   type SubmissionDetail,
 } from "../api";
+import UploadPanel from "./UploadPanel";
 import {
   DEGREE_STATUS,
   FIELD_LABELS,
@@ -33,19 +34,30 @@ export default function SubmissionView() {
   const [hovered, setHovered] = useState<string | null>(null);
   const [showClosed, setShowClosed] = useState(false);
 
+  const load = useCallback(
+    (focusDocument?: string) => {
+      if (!id) return;
+      fetchSubmission(id).then(
+        (d) => {
+          setData(d);
+          const doc = d.documents.find((x) => x.id === focusDocument);
+          const first = (doc ? doc.pages : d.documents.flatMap((x) => x.pages)).find(
+            (p) => p.has_image,
+          );
+          setPageId((current) => (focusDocument || !current ? (first?.id ?? null) : current));
+        },
+        (e: Error) => setError(e.message),
+      );
+    },
+    [id],
+  );
+
   useEffect(() => {
     setData(null);
     setError(null);
-    if (!id) return;
-    fetchSubmission(id).then(
-      (d) => {
-        setData(d);
-        const first = d.documents.flatMap((doc) => doc.pages).find((p) => p.has_image);
-        setPageId(first?.id ?? null);
-      },
-      (e: Error) => setError(e.message),
-    );
-  }, [id]);
+    setPageId(null);
+    load();
+  }, [load]);
 
   const allPages = useMemo(
     () => data?.documents.flatMap((doc) => doc.pages.map((page) => ({ doc, page }))) ?? [],
@@ -136,6 +148,7 @@ export default function SubmissionView() {
         )}
 
         <h2>Documents</h2>
+        <UploadPanel submissionId={data.id} onProcessed={load} />
         <ul className="docs">
           {data.documents.map((doc) => (
             <li key={doc.id}>

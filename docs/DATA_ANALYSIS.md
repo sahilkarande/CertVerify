@@ -400,6 +400,20 @@ Fixes found through validation:
 
 Result: 53 students clear, 29 to review, 0 with errors. No file or ID number appears for two applicants.
 
+### Background pipeline test (Phase 10, 2026-10-22)
+
+Run end to end on a throwaway copy of the database with the real worker, Tesseract and PaddleOCR:
+
+- **Through the browser:** a marksheet image drawn in the page, uploaded with the review screen. It moved through
+  every stage live and its values were outlined on the page.
+- **Through the API:** a real 815 KB, one-page 12th marksheet:
+  - The quality verdict was available about 2.7 s after the upload, and processing finished at 13.7 s.
+  - It was recognised as a 12th marksheet (0.9), and the name, mother's name, seat number and result were read.
+- **Finding:** the extractor had been rewriting a printed name towards the form's spelling even when the names only
+  partly matched, so "ASHA" on another person's page became the applicant's "AASTHA". Spellings are now corrected
+  only when every form word is found, and otherwise the name is kept exactly as printed. One tuning-set name became
+  a miss (34 → 33/39); the held-out score is unchanged.
+
 ### Implications
 
 1. Manual download replaces Drive API access for the seed data. A **local-folder importer** is simpler and
