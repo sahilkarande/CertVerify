@@ -26,6 +26,7 @@ class SubmissionStatus(StrEnum):
     SUBMITTED = "submitted"
     PROCESSING = "processing"
     NEEDS_REVIEW = "needs_review"
+    CHANGES_REQUESTED = "changes_requested"  # sent back to the student with a message
     VERIFIED = "verified"
     REJECTED = "rejected"
 

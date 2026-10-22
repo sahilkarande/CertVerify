@@ -4,6 +4,14 @@ import { fetchSubmissions, type SubmissionRow, type Verdict } from "../api";
 import { DEGREE_STATUS, VERDICT_LABELS, label } from "../labels";
 
 const FILTERS: (Verdict | "all")[] = ["all", "problems", "review", "clear"];
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  submitted: "Submitted",
+  needs_review: "Needs review",
+  changes_requested: "Changes requested",
+  verified: "Verified",
+  rejected: "Rejected",
+};
 const VERDICT_ORDER: Record<Verdict, number> = { problems: 0, review: 1, clear: 2 };
 
 export default function SubmissionList() {
@@ -83,7 +91,8 @@ export default function SubmissionList() {
             <th className="num">Claimed %</th>
             <th className="num">Files</th>
             <th>Open issues</th>
-            <th>Verdict</th>
+            <th>Checks</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -105,11 +114,14 @@ export default function SubmissionList() {
               <td>
                 <span className={`verdict ${r.verdict}`}>{VERDICT_LABELS[r.verdict]}</span>
               </td>
+              <td>
+                <span className={`pill s-${r.status}`}>{STATUS_LABELS[r.status] ?? r.status}</span>
+              </td>
             </tr>
           ))}
           {shown.length === 0 && (
             <tr>
-              <td colSpan={7} className="muted center">
+              <td colSpan={8} className="muted center">
                 No applicants match.
               </td>
             </tr>

@@ -1,6 +1,6 @@
 """All ORM models. Importing this package registers every table on Base.metadata."""
 
-from app.models.applicants import Applicant, Submission
+from app.models.applicants import Applicant, Submission, SubmissionMessage
 from app.models.documents import Document, DocumentPage, ExtractedField, StoredFile
 from app.models.imports import ImportFileRef
 from app.models.jobs import Job
@@ -25,6 +25,7 @@ __all__ = [
     "RequirementSet",
     "StoredFile",
     "Submission",
+    "SubmissionMessage",
     "User",
     "UserSession",
     "ValidationIssue",

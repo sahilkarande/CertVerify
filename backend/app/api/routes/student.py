@@ -29,7 +29,7 @@ from app.models import Document, DocumentPage, RequirementSet, Submission, User,
 from app.models.enums import SubmissionStatus, UserRole
 from app.portal import application as appl
 from app.portal.uploads import add_document, read_capped, remove_document
-from app.review import queries
+from app.review import actions, queries
 from app.services.audit import record_event
 from app.storage import ObjectStorage
 from app.validate.engine import validate_submission
@@ -252,7 +252,7 @@ def submit(intake_id: uuid.UUID, user: Student, db: DbSession) -> dict:
             c["label"] for c in current["checklist"] if c["required"] and c["state"] == "missing"
         ]
         raise HTTPException(status.HTTP_409_CONFLICT, "Upload these first: " + "; ".join(missing))
-    if sub.status == SubmissionStatus.DRAFT:
+    if sub.status in (SubmissionStatus.DRAFT, SubmissionStatus.CHANGES_REQUESTED):
         from app.db.base import utcnow
 
         sub.status = SubmissionStatus.SUBMITTED
@@ -277,3 +277,15 @@ def my_applications(user: Student, db: DbSession) -> dict:
         sub = appl.find_submission(db, user, uuid.UUID(it["id"]))
         out.append({**it, "started": sub is not None, "status": sub.status.value if sub else None})
     return {"applications": out}
+
+
+class StudentMessageIn(BaseModel):
+    body: str = Field(max_length=4000)
+
+
+@router.post("/applications/{intake_id}/messages", status_code=status.HTTP_201_CREATED)
+def message(intake_id: uuid.UUID, body: StudentMessageIn, user: Student, db: DbSession) -> dict:
+    sub = _own_submission(db, user, intake_id)
+    actions.student_message(db, user, sub, body.body)
+    db.commit()
+    return {"messages": actions.messages_json(db, sub.id)}

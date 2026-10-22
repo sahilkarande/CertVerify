@@ -8,6 +8,7 @@ import {
   type Intake,
   type StudentDocument,
 } from "../../api";
+import { MessageThread } from "../ConsolePanels";
 
 const STATE_LABEL: Record<ChecklistItem["state"], string> = {
   missing: "Not uploaded",
@@ -17,6 +18,7 @@ const STATE_LABEL: Record<ChecklistItem["state"], string> = {
 };
 const STATUS_LABEL: Record<string, string> = {
   draft: "Not submitted yet",
+  changes_requested: "Changes requested",
   submitted: "Submitted",
   needs_review: "Submitted — being reviewed",
   verified: "Verified",
@@ -102,6 +104,26 @@ function ApplicationView({ intake, degreeStatuses }: { intake: Intake; degreeSta
         </p>
         {app.general_problems.map((p) => <p key={p} className="warning-text small">{p}</p>)}
       </section>
+
+      {app.decision_note && (
+        <section className={`card notice ${app.status}`}>
+          <div className="strong">
+            {app.status === "rejected" ? "Your application was not accepted" : "Please make these changes"}
+          </div>
+          <p className="small pre">{app.decision_note}</p>
+          {app.status === "changes_requested" && (
+            <p className="muted small">Fix the documents below, then submit again.</p>
+          )}
+        </section>
+      )}
+
+      {(app.messages.length > 0 || app.status !== "draft") && (
+        <section className="card">
+          <h2 className="card-title">Messages</h2>
+          <MessageThread studentView messages={app.messages}
+            send={async (body) => { await studentApi.message(intake.id, body); load(); }} />
+        </section>
+      )}
 
       {app.checklist.map((item) => (
         <ChecklistCard key={item.key} item={item} intakeId={intake.id} editable={app.editable} onChange={load} />
@@ -256,7 +278,7 @@ function DocumentRow({ doc, editable, onRemoved }: { doc: StudentDocument; edita
 
 function SubmitBar({ app, intakeId, onSubmitted }: { app: Application; intakeId: string; onSubmitted: (a: Application) => void }) {
   const [error, setError] = useState<string | null>(null);
-  const submitted = app.status !== "draft";
+  const submitted = app.status !== "draft" && app.status !== "changes_requested";
   const submit = async () => {
     setError(null);
     try {
@@ -271,7 +293,9 @@ function SubmitBar({ app, intakeId, onSubmitted }: { app: Application; intakeId:
         <p className="small">Your application is submitted. You can still replace documents until it is reviewed.</p>
       ) : (
         <>
-          <button className="primary" disabled={!app.ready_to_submit} onClick={submit}>Submit application</button>
+          <button className="primary" disabled={!app.ready_to_submit} onClick={submit}>
+            {app.status === "changes_requested" ? "Submit again" : "Submit application"}
+          </button>
           {!app.ready_to_submit && <p className="muted small">Upload every required document to submit.</p>}
         </>
       )}

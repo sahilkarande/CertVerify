@@ -24,6 +24,7 @@ export interface Box {
 }
 
 export interface Field {
+  id: string;
   key: string;
   value: string | null;
   machine_value: string | null;
@@ -46,6 +47,7 @@ export interface Page {
   ocr: { engine: string; status: string; confidence: number | null; rotation: number } | null;
   has_image: boolean;
   fields: Field[];
+  addable_fields: { key: string; label: string }[];
 }
 
 export interface DocumentInfo {
@@ -65,7 +67,17 @@ export interface Issue {
   status: "open" | "resolved" | "dismissed";
   message: string;
   document_id: string | null;
+  resolution_note: string | null;
+  resolved_at: string | null;
   details: Record<string, unknown>;
+}
+
+export interface Message {
+  id: string;
+  from_staff: boolean;
+  body: string;
+  author: string | null;
+  at: string;
 }
 
 export interface SubmissionDetail {
@@ -75,6 +87,8 @@ export interface SubmissionDetail {
   submitted_at: string | null;
   attributes: Record<string, unknown>;
   verdict: Verdict;
+  decision: { by: string | null; at: string | null; note: string | null };
+  messages: Message[];
   issues: Issue[];
   documents: DocumentInfo[];
 }
@@ -126,6 +140,22 @@ const get = <T>(path: string) => request<T>("GET", BASE + path);
 export const fetchSubmissions = () => get<SubmissionRow[]>("/submissions");
 export const fetchSubmission = (id: string) => get<SubmissionDetail>(`/submissions/${id}`);
 export const pageImageUrl = (pageId: string) => `${BASE}/pages/${pageId}/image`;
+
+export type Decision = "approve" | "reject" | "request_changes" | "reopen";
+
+export const console_ = {
+  correctField: (fieldId: string, value: string, expected_value: string | null) =>
+    request<{ value: string }>("PATCH", `${BASE}/fields/${fieldId}`, { value, expected_value }),
+  addField: (pageId: string, key: string, value: string) =>
+    request<{ id: string }>("POST", `${BASE}/pages/${pageId}/fields`, { key, value }),
+  issueStatus: (issueId: string, status: "open" | "resolved" | "dismissed", note?: string) =>
+    request<{ status: string }>("POST", `${BASE}/issues/${issueId}/status`, { status, note }),
+  decide: (submissionId: string, decision: Decision, expected_status: string, note?: string) =>
+    request<{ status: string }>("POST", `${BASE}/submissions/${submissionId}/decision`,
+      { decision, note, expected_status }),
+  message: (submissionId: string, body: string) =>
+    request<{ messages: Message[] }>("POST", `${BASE}/submissions/${submissionId}/messages`, { body }),
+};
 
 // --- sign-in ---------------------------------------------------------------------
 
@@ -239,6 +269,8 @@ export interface Application {
   checklist: ChecklistItem[];
   general_problems: string[];
   ready_to_submit: boolean;
+  decision_note: string | null;
+  messages: Message[];
 }
 
 export const studentApi = {
@@ -260,4 +292,6 @@ export const studentApi = {
   remove: (documentId: string) => request<void>("DELETE", `${SAPI}/documents/${documentId}`),
   submit: (intakeId: string) => request<Application>("POST", `${SAPI}/applications/${intakeId}/submit`),
   pageImageUrl: (pageId: string) => `${SAPI}/pages/${pageId}/image`,
+  message: (intakeId: string, body: string) =>
+    request<{ messages: Message[] }>("POST", `${SAPI}/applications/${intakeId}/messages`, { body }),
 };

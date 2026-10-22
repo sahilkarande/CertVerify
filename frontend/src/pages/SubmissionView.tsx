@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  console_,
   fetchSubmission,
   pageImageUrl,
   type DocumentInfo,
@@ -10,6 +11,7 @@ import {
   type SubmissionDetail,
 } from "../api";
 import UploadPanel from "./UploadPanel";
+import { DecisionPanel, IssueActions, MessageThread } from "./ConsolePanels";
 import {
   DEGREE_STATUS,
   FIELD_LABELS,
@@ -112,6 +114,7 @@ export default function SubmissionView() {
         </Link>
         <h1 className="applicant-name">{data.applicant.name}</h1>
         <span className={`verdict ${data.verdict}`}>{VERDICT_LABELS[data.verdict]}</span>
+        <DecisionPanel data={data} reload={() => load()} />
         <dl className="facts">
           <dt>Form no.</dt>
           <dd className="mono">{data.applicant.form_number ?? "—"}</dd>
@@ -131,7 +134,8 @@ export default function SubmissionView() {
         {openIssues.length === 0 && <p className="muted small">No open issues.</p>}
         <ul className="issues">
           {openIssues.map((i) => (
-            <IssueItem key={i.id} issue={i} onShow={i.document_id ? () => goToIssue(i) : undefined} />
+            <IssueItem key={i.id} issue={i} reload={() => load()}
+              onShow={i.document_id ? () => goToIssue(i) : undefined} />
           ))}
         </ul>
         {closedIssues.length > 0 && (
@@ -142,10 +146,16 @@ export default function SubmissionView() {
         {showClosed && (
           <ul className="issues closed">
             {closedIssues.map((i) => (
-              <IssueItem key={i.id} issue={i} />
+              <IssueItem key={i.id} issue={i} reload={() => load()} />
             ))}
           </ul>
         )}
+
+        <h2>
+          Messages <span className="count">{data.messages.length}</span>
+        </h2>
+        <MessageThread messages={data.messages}
+          send={async (body) => { await console_.message(data.id, body); load(); }} />
 
         <h2>Documents</h2>
         <UploadPanel submissionId={data.id} onProcessed={load} />
@@ -190,6 +200,7 @@ export default function SubmissionView() {
             onHover={setHovered}
             position={`${allPages.findIndex((x) => x.page.id === pageId) + 1} / ${allPages.length}`}
             onStep={step}
+            reload={() => load()}
           />
         </>
       ) : (
@@ -199,7 +210,7 @@ export default function SubmissionView() {
   );
 }
 
-function IssueItem({ issue, onShow }: { issue: Issue; onShow?: () => void }) {
+function IssueItem({ issue, onShow, reload }: { issue: Issue; onShow?: () => void; reload: () => void }) {
   const details = Object.entries(issue.details).filter(([k]) => k !== "item");
   return (
     <li className={`issue ${issue.severity} ${issue.status}`}>
@@ -224,6 +235,7 @@ function IssueItem({ issue, onShow }: { issue: Issue; onShow?: () => void }) {
           Show document →
         </button>
       )}
+      <IssueActions issue={issue} reload={reload} />
     </li>
   );
 }
@@ -289,6 +301,7 @@ function PagePanel(props: {
   onHover: (k: string | null) => void;
   position: string;
   onStep: (d: number) => void;
+  reload: () => void;
 }) {
   const { doc, page } = props.sel;
   const fieldOrder = Object.keys(FIELD_LABELS);
@@ -347,11 +360,12 @@ function PagePanel(props: {
         <table className="fields">
           <tbody>
             {fields.map((f) => (
-              <FieldRow key={f.key} f={f} hovered={props.hovered} onHover={props.onHover} />
+              <FieldRow key={f.id} f={f} hovered={props.hovered} onHover={props.onHover} reload={props.reload} />
             ))}
           </tbody>
         </table>
       )}
+      {page.addable_fields.length > 0 && <AddField page={page} reload={props.reload} />}
       <p className="muted small legend">
         <span className="swatch high" /> confident (≥ 0.9) <span className="swatch mid" /> check{" "}
         <span className="swatch low" /> unsure
@@ -360,22 +374,87 @@ function PagePanel(props: {
   );
 }
 
-function FieldRow({ f, hovered, onHover }: { f: Field; hovered: string | null; onHover: (k: string | null) => void }) {
+function FieldRow({ f, hovered, onHover, reload }: {
+  f: Field; hovered: string | null; onHover: (k: string | null) => void; reload: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(f.value ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const save = async (v: string) => {
+    setError(null);
+    try {
+      await console_.correctField(f.id, v, f.value);
+      setEditing(false);
+      reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const human = f.source === "human";
   return (
-    <tr
-      className={hovered === f.key ? "hot" : ""}
-      onMouseEnter={() => onHover(f.key)}
-      onMouseLeave={() => onHover(null)}
-    >
+    <tr className={hovered === f.key ? "hot" : ""} onMouseEnter={() => onHover(f.key)} onMouseLeave={() => onHover(null)}>
       <th>{label(FIELD_LABELS, f.key)}</th>
       <td>
-        <span className="value">{f.value ?? "—"}</span>
-        {f.source === "human" && f.machine_value !== f.value && (
-          <span className="muted small"> (read as {f.machine_value})</span>
+        {editing ? (
+          <form className="inline-edit" onSubmit={(e) => { e.preventDefault(); save(value); }}>
+            <input autoFocus value={value} onChange={(e) => setValue(e.target.value)} aria-label={`Correct ${f.key}`} />
+            <button className="secondary">Save</button>
+            <button type="button" className="link-button small" onClick={() => { setEditing(false); setValue(f.value ?? ""); }}>Cancel</button>
+          </form>
+        ) : (
+          <>
+            <button className="value value-button" title="Click to correct" onClick={() => setEditing(true)}>
+              {f.value ?? "—"}
+            </button>
+            {human && f.machine_value !== f.value && (
+              <span className="muted small"> (read as {f.machine_value ?? "nothing"})</span>
+            )}
+          </>
+        )}
+        {error && <div className="error-text small">{error}</div>}
+      </td>
+      <td className="num">
+        {human ? (
+          <span className="conf high" title="Checked by a verifier">✓ checked</span>
+        ) : (
+          <>
+            {f.confidence != null && <ConfidenceTag value={f.confidence} />}
+            <button className="confirm" title="The value is right" onClick={() => save(f.value ?? "")}>✓</button>
+          </>
         )}
       </td>
-      <td className="num">{f.confidence != null && <ConfidenceTag value={f.confidence} />}</td>
     </tr>
+  );
+}
+
+function AddField({ page, reload }: { page: Page; reload: () => void }) {
+  const [key, setKey] = useState("");
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <details className="add-field">
+      <summary className="small">Add a value the machine missed</summary>
+      <form className="inline-edit" onSubmit={async (e) => {
+        e.preventDefault();
+        setError(null);
+        try {
+          await console_.addField(page.id, key, value);
+          setKey("");
+          setValue("");
+          reload();
+        } catch (err) {
+          setError((err as Error).message);
+        }
+      }}>
+        <select required value={key} onChange={(e) => setKey(e.target.value)} aria-label="Which value">
+          <option value="">Choose…</option>
+          {page.addable_fields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+        </select>
+        <input required value={value} onChange={(e) => setValue(e.target.value)} placeholder="Value" aria-label="Value" />
+        <button className="secondary">Add</button>
+      </form>
+      {error && <p className="error-text small">{error}</p>}
+    </details>
   );
 }
 

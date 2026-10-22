@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run run-lan test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user worker enqueue queue-status
+.PHONY: setup run run-lan test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user worker enqueue queue-status corrections-report export-corrections
 
 setup:
 	python3 -m venv $(VENV)
@@ -163,3 +163,12 @@ enqueue:
 
 queue-status:
 	cd backend && .venv/bin/python -m app.cli queue-status
+
+# --- Verifier console & learning loop (Phase 12) ---
+# How often verifiers confirm or correct each extracted value (accuracy on real use)
+corrections-report:
+	cd backend && .venv/bin/python -m app.cli corrections-report
+
+# Verified values as training data (backend/data/training/, contains personal data)
+export-corrections:
+	cd backend && .venv/bin/python -m app.cli export-corrections

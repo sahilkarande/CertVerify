@@ -243,3 +243,32 @@ button.secondary:disabled { opacity: .6; }
   .user-menu { gap: 10px; }
   .user-menu .wrap { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+/* verifier console */
+.decision { margin: 12px 0 4px; display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.decision-buttons { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.decision-form { display: grid; gap: 6px; }
+.decision-form textarea, .inline-edit input, .inline-edit select { font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; width: 100%; }
+button.approve { background: var(--ok); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+button.approve:disabled { opacity: .45; cursor: default; }
+button.danger { color: var(--error); }
+.quote { margin: 0; color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
+.issue-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.issue-actions .decision-form { width: 100%; }
+.messages { display: grid; gap: 8px; }
+.message { border-radius: 8px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); }
+.message.staff { border-left: 3px solid var(--accent); }
+.message.student { border-left: 3px solid var(--ok); }
+.pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.value-button { background: none; border: none; padding: 0; cursor: text; text-align: left; border-bottom: 1px dashed var(--border); }
+.value-button:hover { border-bottom-color: var(--accent); }
+.inline-edit { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.inline-edit input { width: auto; flex: 1 1 120px; }
+button.confirm { margin-left: 6px; border: 1px solid var(--border); background: var(--bg); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 0 6px; color: var(--ok); }
+.add-field { margin-top: 10px; }
+.add-field summary { cursor: pointer; color: var(--accent); }
+.add-field form { margin-top: 8px; }
+.notice.changes_requested { border-left: 4px solid var(--warning); }
+.notice.rejected { border-left: 4px solid var(--error); }
+.pill.s-changes_requested { background: var(--warning-soft); color: var(--warning); }
+.pill.s-draft { background: var(--info-soft); color: var(--info); }

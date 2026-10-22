@@ -184,6 +184,30 @@ make frontend-build      # after changes to frontend/
 make run                 # then open http://127.0.0.1:8000/
 ```
 
+## Verifier console
+
+On an applicant's review screen, staff can:
+- **Values:** click a value to correct it, ✓ to confirm it is right, or "Add a value the machine missed". The
+  machine's original reading is kept next to the verified value.
+- **Issues:** mark an issue resolved, or dismiss it. Dismissing needs a written reason, which is kept on record, and
+  any issue can be reopened.
+- **Decide:**
+  - **Approve:** only possible once every error and warning is resolved or dismissed.
+  - **Request changes:** with a message; the application goes back to the student, who can fix and submit again.
+  - **Reject:** with a reason.
+  - **Reopen a decision:** with a reason.
+- **Message the student:** messages are shown in their portal and emailed, and the student can reply.
+
+Every action is audited (who and what, never the values). Edits made from an out-of-date screen are refused instead of
+overwriting someone else's change.
+
+**Learning loop:** every confirmed, corrected or added value is a labelled example.
+
+```bash
+make corrections-report    # per value type: how often the machine was right, corrected or missed (real-use accuracy)
+make export-corrections    # training data: backend/data/training/corrections-<date>.jsonl (personal data, private)
+```
+
 ## Student portal
 
 Students open the same address and choose "I'm a student":

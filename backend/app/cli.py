@@ -709,6 +709,44 @@ def cmd_queue_status(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_corrections_report(_: argparse.Namespace) -> int:
+    from app.review.learning import corrections_report
+
+    db = _database()
+    with db.session_factory() as session:
+        report = corrections_report(session)
+    db.dispose()
+    if not report:
+        print("no values checked by verifiers yet")
+        return 0
+    print("field                 checked  machine right  corrected  missed   high-conf right")
+    for key, c in sorted(report.items()):
+        checked = c["confirmed"] + c["corrected"] + c["added"]
+        hi = f"{c['high_conf_ok']}/{c['high_conf']}" if c["high_conf"] else "-"
+        counts = f"{checked:7}  {c['confirmed']:13}  {c['corrected']:9}  {c['added']:6}"
+        print(f"{key:21} {counts}   {hi:>9}")
+    return 0
+
+
+def cmd_export_corrections(args: argparse.Namespace) -> int:
+    from datetime import date
+
+    from app.review.learning import export_corrections
+
+    settings = get_settings()
+    path = (
+        Path(args.out)
+        if args.out
+        else (settings.storage_dir.parent / "training" / f"corrections-{date.today()}.jsonl")
+    )
+    db = _database()
+    with db.session_factory() as session:
+        n = export_corrections(session, path)
+    db.dispose()
+    print(f"wrote {n} verified values to {path} (contains personal data; keep it private)")
+    return 0
+
+
 def _storage(settings):
     from app.storage import EncryptedLocalStorage
 
@@ -852,6 +890,13 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("queue-status", help="Background job counts")
     p.set_defaults(func=cmd_queue_status)
+
+    p = sub.add_parser("corrections-report", help="How often verifiers confirm/correct values")
+    p.set_defaults(func=cmd_corrections_report)
+
+    p = sub.add_parser("export-corrections", help="Export verified values as training data")
+    p.add_argument("--out", default=None)
+    p.set_defaults(func=cmd_export_corrections)
 
     p = sub.add_parser("classify", help="Classify OCR'd pages (type, semester, level)")
     p.add_argument("--force", action="store_true", help="Re-classify even if up to date")

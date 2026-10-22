@@ -4,10 +4,10 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, IdMixin, TimestampMixin, str_enum
+from app.db.base import Base, IdMixin, TimestampMixin, str_enum, utcnow
 from app.models.enums import ApplicantSource, SubmissionStatus
 
 
@@ -55,8 +55,28 @@ class Submission(IdMixin, TimestampMixin, Base):
     # Answers given with the submission that rules may depend on,
     # e.g. {"degree_status": "...", "claimed_aggregate_percent": 75.0}.
     attributes: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    # Last verifier decision (approve / reject / request changes), who and why.
+    decided_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str | None] = mapped_column(Text)
 
     applicant: Mapped[Applicant] = relationship(back_populates="submissions")
     documents: Mapped[list["Document"]] = relationship(  # noqa: F821
         back_populates="submission", cascade="all, delete-orphan"
     )
+
+
+class SubmissionMessage(IdMixin, Base):
+    """A message between verifiers and the student about one application."""
+
+    __tablename__ = "submission_messages"
+
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("submissions.id", ondelete="CASCADE"), index=True
+    )
+    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    from_staff: Mapped[bool] = mapped_column(default=True)
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

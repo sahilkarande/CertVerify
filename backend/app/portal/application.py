@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db.base import iso_utc
 from app.intake.quality import MESSAGES as QUALITY_MESSAGES
 from app.jobs.queue import latest_job
 from app.models import (
@@ -34,6 +35,7 @@ from app.models.enums import (
     QualityVerdict,
     SubmissionStatus,
 )
+from app.review.actions import messages_json
 from app.services.audit import record_event
 from app.validate.rules import accepted_types
 
@@ -44,7 +46,12 @@ DEGREE_STATUSES = {
     "awaiting_final_semester": "I am waiting for my final semester result",
 }
 # Applications can still change until a verifier has decided.
-EDITABLE = {SubmissionStatus.DRAFT, SubmissionStatus.SUBMITTED, SubmissionStatus.NEEDS_REVIEW}
+EDITABLE = {
+    SubmissionStatus.DRAFT,
+    SubmissionStatus.SUBMITTED,
+    SubmissionStatus.NEEDS_REVIEW,
+    SubmissionStatus.CHANGES_REQUESTED,
+}
 
 # Issue codes a student is told about, with what to do. Anything else stays with staff.
 STUDENT_MESSAGES = {
@@ -165,7 +172,7 @@ def _document_json(db: Session, doc: Document, codes: dict) -> dict:
     pages = sorted(doc.pages, key=lambda p: p.page_number)
     return {
         "id": str(doc.id),
-        "uploaded_at": doc.created_at.isoformat() if doc.created_at else None,
+        "uploaded_at": iso_utc(doc.created_at),
         "processing": processing,
         "stage": job.stage.value if job else None,
         "failed": doc.status == DocumentStatus.FAILED,
@@ -261,5 +268,10 @@ def application_json(db: Session, sub: Submission) -> dict:
         },
         "checklist": checklist,
         "general_problems": general,
+        # The verifier's note is shown when the student has something to do or know.
+        "decision_note": sub.decision_note
+        if sub.status in (SubmissionStatus.CHANGES_REQUESTED, SubmissionStatus.REJECTED)
+        else None,
+        "messages": messages_json(db, sub.id),
         "ready_to_submit": all(c["state"] != "missing" for c in checklist if c["required"]),
     }
