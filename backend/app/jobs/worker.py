@@ -15,7 +15,16 @@ from app.core.logging import configure_logging
 from app.core.security import load_storage_key
 from app.db.session import Database
 from app.jobs.pipeline import Engines, run_job
-from app.jobs.queue import CHECK_DOCUMENT, KINDS, claim, fail, finish
+from app.jobs.queue import (
+    CHECK_DOCUMENT,
+    HEARTBEAT_EVERY,
+    KINDS,
+    beat,
+    claim,
+    fail,
+    finish,
+    sign_off,
+)
 from app.ocr.engine import TesseractEngine
 from app.storage import EncryptedLocalStorage
 
@@ -48,9 +57,17 @@ class Worker:
         self.db, self.storage, self.engines, self.worker_id = db, storage, engines, worker_id
         self.kinds = tuple(kinds)
         self.stopping = False
+        self._last_beat = 0.0
+
+    def heartbeat(self, force: bool = False) -> None:
+        if force or time.monotonic() - self._last_beat >= HEARTBEAT_EVERY.total_seconds():
+            with self.db.session_factory() as session:
+                beat(session, self.worker_id, self.kinds)
+            self._last_beat = time.monotonic()
 
     def run_once(self) -> bool:
         """Run one job if there is one. Returns whether a job was run."""
+        self.heartbeat()
         with self.db.session_factory() as session:
             job = claim(session, self.worker_id, self.kinds)
             if job is None:
@@ -103,12 +120,15 @@ def main() -> None:
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
     logger.info("worker %s started (%s)", worker.worker_id, ", ".join(kinds))
+    worker.heartbeat(force=True)
     try:
         worker.run_forever()
     except KeyboardInterrupt:
         logger.info("stopped immediately; the interrupted job will be retried")
     finally:
         worker.engines.close()
+        with db.session_factory() as session:
+            sign_off(session, worker.worker_id)
         db.dispose()
 
 

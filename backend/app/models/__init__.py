@@ -3,7 +3,7 @@
 from app.models.applicants import Applicant, Submission, SubmissionMessage
 from app.models.documents import Document, DocumentPage, ExtractedField, StoredFile
 from app.models.imports import ImportFileRef
-from app.models.jobs import Job
+from app.models.jobs import Job, WorkerHeartbeat
 from app.models.learning import MlModel
 from app.models.ocr import PageOcr
 from app.models.registry import DocumentType, RequirementItem, RequirementSet
@@ -19,6 +19,7 @@ __all__ = [
     "ExtractedField",
     "ImportFileRef",
     "Job",
+    "WorkerHeartbeat",
     "LoginCode",
     "MlModel",
     "Institution",

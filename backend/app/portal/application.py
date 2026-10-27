@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.base import iso_utc
 from app.extract.readability import ID_KEYS, MAX_ATTEMPTS, NAME
 from app.intake.quality import MESSAGES as QUALITY_MESSAGES
-from app.jobs.queue import latest_job
+from app.jobs.queue import latest_job, processing_health
 from app.models import (
     Applicant,
     Document,
@@ -301,4 +301,7 @@ def application_json(db: Session, sub: Submission) -> dict:
         else None,
         "messages": messages_json(db, sub.id),
         "ready_to_submit": all(c["state"] != "missing" for c in checklist if c["required"]),
+        # Their files wait while no worker is running: say so instead of "Checking..." forever.
+        "processing_paused": any(c["state"] == "processing" for c in checklist)
+        and processing_health(db)["stalled"],
     }

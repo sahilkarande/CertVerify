@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.db.base import utcnow
-from app.models import Job
+from app.models import Job, WorkerHeartbeat
 from app.models.enums import JobStage, JobStatus
 
 # Job kinds. An upload is checked first (render + picture quality, seconds) with the highest
@@ -144,4 +144,68 @@ def queue_counts(db: Session) -> dict[str, int]:
 
     return {
         s.value: n for s, n in db.execute(select(Job.status, func.count()).group_by(Job.status))
+    }
+
+
+# ---------- is anyone processing? ----------
+
+HEARTBEAT_EVERY = timedelta(seconds=15)
+# A worker not seen for this long is gone (its heartbeat is refreshed between jobs and at
+# every stage of a job, and no stage takes this long).
+WORKER_GONE_AFTER = timedelta(minutes=3)
+# Due jobs waiting this long with no worker for their kind: processing is stalled.
+STALLED_AFTER = timedelta(minutes=2)
+
+
+def beat(db: Session, worker_id: str, kinds: tuple[str, ...]) -> None:
+    """Record that this worker is alive (commits)."""
+    row = db.get(WorkerHeartbeat, worker_id)
+    if row is None:
+        db.add(WorkerHeartbeat(worker_id=worker_id, kinds=",".join(kinds)))
+    else:
+        row.last_seen = utcnow()
+    db.commit()
+
+
+def sign_off(db: Session, worker_id: str) -> None:
+    row = db.get(WorkerHeartbeat, worker_id)
+    if row is not None:
+        db.delete(row)
+        db.commit()
+
+
+def _aware(dt):
+    from datetime import UTC
+
+    return dt if dt is None or dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def processing_health(db: Session) -> dict:
+    """Whether queued work is being picked up. ``stalled`` means jobs have been due for a
+    while and no live worker takes their kind (a backlog with workers running is not)."""
+    now = utcnow()
+    busy = set(
+        db.scalars(
+            select(Job.locked_by).where(Job.status == JobStatus.RUNNING, Job.lease_until > now)
+        )
+    )  # mid-way through a long document: its lease is renewed at every stage
+    alive = [
+        w
+        for w in db.scalars(select(WorkerHeartbeat))
+        if _aware(w.last_seen) > now - WORKER_GONE_AFTER or w.worker_id in busy
+    ]
+    served = {k for w in alive for k in w.kinds.split(",")}
+    due = db.execute(
+        select(Job.kind, Job.run_after).where(Job.status == JobStatus.QUEUED, Job.run_after <= now)
+    ).all()
+    oldest = min((_aware(r) for _, r in due), default=None)
+    stalled_kinds = sorted(
+        {k for k, r in due if k not in served and _aware(r) < now - STALLED_AFTER}
+    )
+    return {
+        "workers": len(alive),
+        "waiting": len(due),
+        "oldest_waiting_s": int((now - oldest).total_seconds()) if oldest else 0,
+        "stalled": bool(stalled_kinds),
+        "stalled_kinds": stalled_kinds,
     }

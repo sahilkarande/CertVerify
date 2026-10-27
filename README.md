@@ -20,7 +20,8 @@ make seed                              # load the document-type registry (safe t
 ## Run
 
 ```bash
-make run
+make run       # web app + the background worker that processes uploads (Ctrl+C stops both)
+make run-lan   # the same, reachable from other devices on this Wi-Fi
 ```
 
 - Health check: http://127.0.0.1:8000/api/v1/health
@@ -268,12 +269,21 @@ quality check → OCR (Tesseract rotation + PaddleOCR reading) → classificatio
 The queue is a table in the database, so there is no extra service to install.
 
 ```bash
-make run            # terminal 1: web app + API
-make worker         # terminal 2: processes queued documents (Ctrl+C finishes the current one, then stops)
-make check-worker   # optional terminal 3: only the quick upload checks (no OCR loaded, little memory)
+make run            # web app + one worker (Ctrl+C: the web app stops, the worker finishes its document)
+make run worker=0   # web app only, when workers run separately:
+make worker         #   a worker on its own (several may run; each takes different jobs)
+make check-worker   #   only the quick upload checks (no OCR loaded, little memory)
 make enqueue        # queue documents whose processing is out of date (all=1: everything)
-make queue-status   # job counts, and failures by error type
+make queue-status   # job counts, failures by error type, workers running, and whether it is stalled
 ```
+
+- **If no worker is running**, uploads wait.
+- **After 2 minutes:**
+  - Staff see a "Processing is paused" banner with the fix.
+  - Students see "checking is paused, your files are saved" instead of "Checking…" forever.
+- **How a worker counts as running:**
+  - Each worker reports a heartbeat every 15 seconds.
+  - A worker in the middle of a long document counts as running while it holds the job's lease.
 
 - Every upload is processed in two jobs:
   1. A quick check (pages rendered, picture quality judged, a few seconds). It runs before any waiting reads, so a

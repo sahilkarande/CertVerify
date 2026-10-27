@@ -144,7 +144,16 @@ export const pageImageUrl = (pageId: string) => `${BASE}/pages/${pageId}/image`;
 
 export type Decision = "approve" | "reject" | "request_changes" | "reopen";
 
+export interface ProcessingHealth {
+  workers: number;
+  waiting: number;
+  oldest_waiting_s: number;
+  stalled: boolean;
+  stalled_kinds: string[];
+}
+
 export const console_ = {
+  processing: () => request<ProcessingHealth>("GET", `${BASE}/processing`),
   correctField: (fieldId: string, value: string, expected_value: string | null) =>
     request<{ value: string }>("PATCH", `${BASE}/fields/${fieldId}`, { value, expected_value }),
   addField: (pageId: string, key: string, value: string) =>
@@ -325,6 +334,7 @@ export interface Application {
   checklist: ChecklistItem[];
   general_problems: string[];
   ready_to_submit: boolean;
+  processing_paused: boolean;
   decision_note: string | null;
   messages: Message[];
 }

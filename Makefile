@@ -8,15 +8,17 @@ setup:
 	$(PY) -m pip install --upgrade pip
 	cd backend && .venv/bin/pip install -e ".[dev,gdrive,train]"
 
+# The web app and the background worker together (worker=0: web app only, e.g. when
+# `make worker` runs elsewhere). Ctrl+C stops both.
 run:
-	cd backend && .venv/bin/uvicorn app.main:create_app --factory --reload --host 127.0.0.1 --port 8000
+	backend/scripts/serve.sh 127.0.0.1 $(if $(filter 0,$(worker)),no-worker)
 
 # Reachable from other devices on the same Wi-Fi: http://<this laptop's IP>:8000/
 # Plain HTTP: anyone on the network could read passwords and data in transit. Trusted
 # networks and testing only; real use needs HTTPS (deployment phase).
 run-lan:
 	@echo "Open from another device on this network: http://$$(ip route get 1.1.1.1 | awk '{for(i=1;i<NF;i++) if($$i=="src") print $$(i+1)}'):8000/"
-	cd backend && .venv/bin/uvicorn app.main:create_app --factory --reload --host 0.0.0.0 --port 8000
+	backend/scripts/serve.sh 0.0.0.0 $(if $(filter 0,$(worker)),no-worker)
 
 test:
 	cd backend && .venv/bin/pytest

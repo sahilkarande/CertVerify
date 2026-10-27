@@ -104,6 +104,12 @@ function ApplicationView({ intake, degreeStatuses }: { intake: Intake; degreeSta
           <span className="muted">{done} of {app.checklist.length} documents look good</span>
         </p>
         {app.general_problems.map((p) => <p key={p} className="warning-text small">{p}</p>)}
+        {app.processing_paused && (
+          <p className="warning-text small" role="status">
+            Checking is paused for the moment. Your files are saved and will be checked automatically
+            when it resumes; you don't need to upload them again.
+          </p>
+        )}
       </section>
 
       {app.decision_note && (

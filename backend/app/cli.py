@@ -722,13 +722,14 @@ def cmd_enqueue(args: argparse.Namespace) -> int:
 
 
 def cmd_queue_status(_: argparse.Namespace) -> int:
-    from app.jobs.queue import queue_counts
+    from app.jobs.queue import processing_health, queue_counts
     from app.models import Job
     from app.models.enums import JobStatus
 
     db = _database()
     with db.session_factory() as session:
         counts = queue_counts(session)
+        health = processing_health(session)
         failed = session.execute(
             select(Job.last_error, func.count())
             .where(Job.status == JobStatus.FAILED)
@@ -736,6 +737,12 @@ def cmd_queue_status(_: argparse.Namespace) -> int:
         ).all()
     db.dispose()
     print("jobs: " + (", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "none"))
+    print(
+        f"workers running: {health['workers']} | due and waiting: {health['waiting']} "
+        f"(oldest {health['oldest_waiting_s']}s)"
+    )
+    if health["stalled"]:
+        print("STALLED: no worker is taking " + ", ".join(health["stalled_kinds"]) + " (make run)")
     if failed:
         print("failed: " + ", ".join(f"{e}={n}" for e, n in failed))
     return 0

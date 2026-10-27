@@ -292,3 +292,8 @@ table.list.compact tbody tr { cursor: default; }
 
 .table-scroll { overflow-x: auto; }
 .table-scroll table { min-width: 640px; }
+
+/* processing paused (no background worker) */
+.stall-banner { background: var(--warning-soft); color: var(--text); border-bottom: 1px solid var(--warning); padding: 10px 16px; font-size: 14px; }
+.stall-banner strong { color: var(--warning); }
+.stall-banner code { font-size: 13px; }

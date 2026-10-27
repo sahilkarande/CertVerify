@@ -41,6 +41,14 @@ def list_submissions(user: Staff, db: DbSession, response: Response) -> list[dic
     return queries.submission_list(db, scope(user))
 
 
+@router.get("/processing")
+def processing(user: Staff, db: DbSession) -> dict:
+    """Is the background worker picking up uploads? (Counts only, the same for all staff.)"""
+    from app.jobs.queue import processing_health
+
+    return processing_health(db)
+
+
 @router.get("/submissions/{submission_id}")
 def get_submission(
     submission_id: uuid.UUID, user: Staff, db: DbSession, response: Response

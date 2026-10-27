@@ -36,3 +36,15 @@ class Job(IdMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkerHeartbeat(Base):
+    """One row per running worker, refreshed while it runs, so the app can tell whether
+    anyone is processing the queue (a stopped worker leaves uploads waiting forever)."""
+
+    __tablename__ = "worker_heartbeats"
+
+    worker_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kinds: Mapped[str] = mapped_column(String(255))  # comma-separated job kinds it takes
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -16,16 +16,21 @@ from app.jobs.pipeline import Engines
 from app.jobs.queue import (
     CHECK_DOCUMENT,
     CHECK_PRIORITY,
+    KINDS,
     LEASE,
+    PROCESS_DOCUMENT,
     READ_DOCUMENT,
     UPLOAD_PRIORITY,
+    beat,
     claim,
     enqueue_document,
     enqueue_upload,
     fail,
     finish,
     latest_job,
+    processing_health,
     progress,
+    sign_off,
     try_claim,
 )
 from app.jobs.worker import Worker
@@ -37,6 +42,7 @@ from app.models import (
     Job,
     PageOcr,
     ValidationIssue,
+    WorkerHeartbeat,
 )
 from app.models.enums import DocumentStatus, JobStage, JobStatus, Readability, UserRole
 from app.ocr.engine import OcrResult, Word
@@ -425,3 +431,70 @@ def test_platform_admin_can_upload_anywhere(client: TestClient, session: Session
     make_user(session, "root@platform.test", role=UserRole.PLATFORM_ADMIN)
     sign_in(client, "root@platform.test")
     assert _upload(client, str(doc.submission_id), jpeg()).status_code == 202
+
+
+# ---------- is anyone processing? ----------
+
+
+def _waiting(session: Session, storage, minutes: float, kind: str = CHECK_DOCUMENT) -> Job:
+    doc = session.scalar(select(Document).limit(1)) or _doc(session, storage)
+    job = enqueue_document(session, doc.id, kind=kind)
+    job.run_after = job.created_at = utcnow() - timedelta(minutes=minutes)
+    session.commit()
+    return job
+
+
+def test_uploads_waiting_with_no_worker_are_stalled(session: Session, storage) -> None:
+    _waiting(session, storage, minutes=5)
+    health = processing_health(session)
+    assert health["stalled"] and health["workers"] == 0 and health["oldest_waiting_s"] >= 300
+    assert health["stalled_kinds"] == [CHECK_DOCUMENT]
+
+
+def test_a_fresh_upload_or_a_live_worker_is_not_stalled(session: Session, storage) -> None:
+    job = _waiting(session, storage, minutes=0.5)
+    assert processing_health(session)["stalled"] is False  # just uploaded: give it a moment
+    job.run_after = utcnow() - timedelta(minutes=5)
+    beat(session, "w1", KINDS)  # a backlog with a worker running is not a stall
+    assert processing_health(session) | {"oldest_waiting_s": 0} == {
+        "workers": 1,
+        "waiting": 1,
+        "oldest_waiting_s": 0,
+        "stalled": False,
+        "stalled_kinds": [],
+    }
+
+
+def test_a_worker_busy_with_a_long_document_counts_as_running(session: Session, storage) -> None:
+    _waiting(session, storage, minutes=5, kind=READ_DOCUMENT)
+    beat(session, "busy", KINDS)
+    hb = session.get(WorkerHeartbeat, "busy")
+    hb.last_seen = utcnow() - timedelta(minutes=30)  # no beat for a long time...
+    session.commit()
+    assert processing_health(session)["stalled"] is True
+    running = _waiting(session, storage, minutes=0, kind=PROCESS_DOCUMENT)
+    assert try_claim(session, running.id, "busy")  # ...but it holds a live lease
+    assert processing_health(session)["stalled"] is False
+
+
+def test_reads_stall_when_only_a_checks_worker_runs(session: Session, storage) -> None:
+    _waiting(session, storage, minutes=5, kind=READ_DOCUMENT)
+    beat(session, "checker", (CHECK_DOCUMENT,))
+    assert processing_health(session)["stalled_kinds"] == [READ_DOCUMENT]
+
+
+def test_the_worker_reports_itself_and_signs_off(session: Session, database: Database, storage):
+    worker = _worker(database, storage)
+    worker.run_once()
+    assert session.get(WorkerHeartbeat, "test-worker") is not None
+    sign_off(session, "test-worker")
+    session.expire_all()
+    assert session.get(WorkerHeartbeat, "test-worker") is None
+
+
+def test_staff_and_students_are_told_when_processing_is_paused(
+    client: TestClient, signed_in: dict, session: Session, storage
+) -> None:
+    assert client.get(f"{API}/processing").json()["stalled"] is False
+    _waiting(session, storage, minutes=5)
+    assert client.get(f"{API}/processing").json()["stalled"] is True

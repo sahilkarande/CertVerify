@@ -1,7 +1,7 @@
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
-import { SIGNED_OUT_EVENT, auth, type Me } from "./api";
+import { SIGNED_OUT_EVENT, auth, console_, type Me } from "./api";
 import ChangePassword from "./pages/ChangePassword";
 import Settings from "./pages/Settings";
 import Portal from "./pages/student/Portal";
@@ -68,6 +68,7 @@ function App() {
           <button className="link-button small" onClick={signOut}>Sign out</button>
         </div>
       </header>
+      <ProcessingBanner />
       <Routes>
         <Route path="/" element={<SubmissionList />} />
         <Route path="/submissions/:id" element={<SubmissionView />} />
@@ -76,6 +77,31 @@ function App() {
         <Route path="*" element={<p className="page-pad">Page not found.</p>} />
       </Routes>
     </BrowserRouter>
+  );
+}
+
+const HEALTH_POLL_MS = 30_000;
+
+/** Uploads wait forever when no background worker is running: tell staff, with the fix. */
+function ProcessingBanner() {
+  const [stalled, setStalled] = useState<{ waiting: number; minutes: number } | null>(null);
+  useEffect(() => {
+    const check = () =>
+      console_.processing().then(
+        (h) => setStalled(h.stalled ? { waiting: h.waiting, minutes: Math.round(h.oldest_waiting_s / 60) } : null),
+        () => undefined, // a failed check is not news; try again next time
+      );
+    check();
+    const t = window.setInterval(check, HEALTH_POLL_MS);
+    return () => window.clearInterval(t);
+  }, []);
+  if (!stalled) return null;
+  return (
+    <div className="stall-banner" role="alert">
+      <strong>Processing is paused:</strong> {stalled.waiting} upload{stalled.waiting === 1 ? "" : "s"} waiting
+      {stalled.minutes > 0 && ` (oldest ${stalled.minutes} min)`} and no background worker is running.
+      Start it on the server with <code>make run</code> (or <code>make worker</code>).
+    </div>
   );
 }
 

@@ -315,3 +315,29 @@ def test_staff_cannot_use_student_endpoints(client, intake, session) -> None:
     make_user(session, "v@x.test", institution_id=None)
     sign_in(client, "v@x.test")
     assert client.get(f"{S}/applications").status_code == 403
+
+
+def test_student_is_told_when_checking_is_paused(student, intake, session) -> None:
+    from datetime import timedelta
+
+    from app.jobs.queue import KINDS, beat
+    from app.models import Job
+
+    student.put(f"{S}/applications/{intake}", json=ANSWERS, headers=CSRF)
+    r = student.post(
+        f"{S}/applications/{intake}/documents",
+        headers=CSRF,
+        data={"slot": "ssc"},
+        files={"file": ("scan.jpg", jpeg(), "image/jpeg")},
+    )
+    assert r.status_code == 202
+    app = student.get(f"{S}/applications/{intake}").json()
+    assert app["processing_paused"] is False  # just uploaded
+
+    job = session.scalar(select(Job))
+    job.run_after = utcnow() - timedelta(minutes=5)  # nobody picked it up
+    session.commit()
+    assert student.get(f"{S}/applications/{intake}").json()["processing_paused"] is True
+
+    beat(session, "w", KINDS)  # a worker starts
+    assert student.get(f"{S}/applications/{intake}").json()["processing_paused"] is False
