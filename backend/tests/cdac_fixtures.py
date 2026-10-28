@@ -50,3 +50,6 @@ def write_csv(path: Path, rows: list[list[str]], header: list[str] | None = None
         w.writerow(header or HEADER)
         w.writerows(rows)
     return path
+
+
+KEY = b"test-erasure-key-0123456789abcdef"  # erasure_key for import_form in tests

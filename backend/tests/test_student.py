@@ -341,3 +341,53 @@ def test_student_is_told_when_checking_is_paused(student, intake, session) -> No
 
     beat(session, "w", KINDS)  # a worker starts
     assert student.get(f"{S}/applications/{intake}").json()["processing_paused"] is False
+
+
+def test_each_page_says_what_it_is_and_what_to_fix(
+    student, intake, session, database: Database, test_settings
+) -> None:
+    from app.core.security import load_storage_key
+    from app.jobs.pipeline import Engines
+    from app.jobs.worker import Worker
+    from app.models import DocumentPage
+    from app.portal.application import PAGE_UNRECOGNISED
+    from app.storage import EncryptedLocalStorage
+    from tests.test_jobs import ScriptedOcr
+
+    student.put(f"{S}/applications/{intake}", json=ANSWERS, headers=CSRF)
+    student.post(
+        f"{S}/applications/{intake}/documents",
+        headers=CSRF,
+        data={"slot": "ssc"},
+        files={"file": ("my marks.jpg", jpeg(), "image/jpeg")},
+    )
+    storage = EncryptedLocalStorage(test_settings.storage_dir, load_storage_key(test_settings))
+    worker = Worker(database, storage, Engines(rotation=ScriptedOcr("tesseract")), "w")
+    worker.run_once()
+    worker.run_once()
+    app = student.get(f"{S}/applications/{intake}").json()
+    ssc = next(c for c in app["checklist"] if c["key"] == "ssc")
+    [doc] = ssc["documents"]
+    [page] = doc["pages"]
+    assert doc["file_name"] == "my marks.jpg"
+    assert page["recognised"] == "Degree semester marksheet / grade report"
+    assert page["semesters"] == [3] and page["status"] in ("ok", "check")
+    # Pages the machine cannot place get a plain explanation and a "worth a look" badge.
+    session.scalar(select(DocumentPage)).detected_type_id = None
+    session.commit()
+    app = student.get(f"{S}/applications/{intake}").json()
+    page = next(c for c in app["checklist"] if c["key"] == "ssc")["documents"][0]["pages"][0]
+    assert PAGE_UNRECOGNISED in page["problems"] and page["status"] == "check"
+    assert page["recognised"] is None
+
+
+def test_missing_semesters_are_named_as_a_hint() -> None:
+    from app.portal.application import _issue_text
+
+    issue = ValidationIssue(
+        code="semester_marksheets_missing",
+        details={"covered": 6, "highest": 8, "numbers_not_seen": [2, 5]},
+    )
+    text = _issue_text(issue)
+    assert "found 6 for results up to semester 8" in text
+    assert "could not spot semester 2 or 5" in text

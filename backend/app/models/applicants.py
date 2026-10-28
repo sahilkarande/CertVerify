@@ -80,3 +80,16 @@ class SubmissionMessage(IdMixin, Base):
     from_staff: Mapped[bool] = mapped_column(default=True)
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ErasedApplicant(Base):
+    """A person erased on request (app/admin/erasure.py): only a keyed hash of their form
+    number, so the form import skips them instead of bringing them back."""
+
+    __tablename__ = "erased_applicants"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="CASCADE"), index=True
+    )
+    erased_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

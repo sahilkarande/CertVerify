@@ -47,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.storage = EncryptedLocalStorage(settings.storage_dir, master_key)
     app.state.totp_key = derive_key(master_key)
     app.state.code_key = derive_key(master_key, "login-code")
+    app.state.erasure_key = derive_key(master_key, "erasure")
     app.state.email = build_sender(settings)
     app.add_middleware(SecurityMiddleware)
 

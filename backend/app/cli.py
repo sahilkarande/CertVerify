@@ -18,6 +18,12 @@ def _database() -> Database:
     return Database(get_settings().database_url)
 
 
+def _erasure_key() -> bytes:
+    from app.auth.totp import derive_key
+
+    return derive_key(load_storage_key(get_settings()), "erasure")
+
+
 def cmd_seed(_: argparse.Namespace) -> int:
     db = _database()
     with db.session_factory() as session, session.begin():
@@ -48,7 +54,7 @@ def cmd_import_form(args: argparse.Namespace) -> int:
 
     db = _database()
     with db.session_factory() as session, session.begin():
-        report = import_form(session, parsed)
+        report = import_form(session, parsed, erasure_key=_erasure_key())
     db.dispose()
 
     print(
@@ -56,6 +62,8 @@ def cmd_import_form(args: argparse.Namespace) -> int:
         f"updated: {report.applicants_updated} | Drive file refs created: "
         f"{report.file_refs_created}, already known: {report.file_refs_existing}"
     )
+    if report.skipped_erased:
+        print(f"skipped {report.skipped_erased} row(s) of people erased on request")
     if report.warnings:
         print(f"{len(report.warnings)} warning(s):")
         for w in report.warnings:

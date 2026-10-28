@@ -13,7 +13,7 @@ from app.models import Document, ImportFileRef, StoredFile
 from app.models.enums import ImportFileStatus
 from app.services.files import read_file
 from app.storage import EncryptedLocalStorage
-from tests.cdac_fixtures import make_row, write_csv
+from tests.cdac_fixtures import KEY, make_row, write_csv
 
 
 class FakeDrive:
@@ -44,7 +44,9 @@ class FakeDrive:
 
 @pytest.fixture
 def imported(session: Session, tmp_path: Path) -> list[str]:
-    import_form(session, parse_csv(write_csv(tmp_path / "f.csv", [make_row("100000001")])))
+    import_form(
+        session, parse_csv(write_csv(tmp_path / "f.csv", [make_row("100000001")])), erasure_key=KEY
+    )
     session.commit()
     return list(session.scalars(select(ImportFileRef.external_id)))
 

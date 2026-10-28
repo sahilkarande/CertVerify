@@ -22,7 +22,7 @@ from app.services.files import read_file
 from app.services.filetypes import sniff_mime
 from app.services.names import normalize_name
 from app.storage import EncryptedLocalStorage
-from tests.cdac_fixtures import make_row, write_csv
+from tests.cdac_fixtures import KEY, make_row, write_csv
 
 JPEG = b"\xff\xd8\xff\xe0" + b"jpeg-body"
 PNG = b"\x89PNG\r\n\x1a\n" + b"png-body"
@@ -59,7 +59,7 @@ def make_export(root: Path, students=STUDENTS) -> Path:
 @pytest.fixture
 def imported_form(session: Session, tmp_path: Path) -> None:
     rows = [make_row(no, c2=name, c7=email) for no, name, email, _ in STUDENTS]
-    import_form(session, parse_csv(write_csv(tmp_path / "f.csv", rows)))
+    import_form(session, parse_csv(write_csv(tmp_path / "f.csv", rows)), erasure_key=KEY)
     session.commit()
 
 

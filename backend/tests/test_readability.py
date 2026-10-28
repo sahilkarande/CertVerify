@@ -280,7 +280,8 @@ def test_values_that_do_not_match_twice_ask_for_a_clearer_copy(
     assert page_json["confirm"] is None and page_json["text_unreadable"] is True
     item = next(i for i in r.json()["checklist"] if i["documents"])
     assert item["state"] == "attention"
-    assert any("clearer scan or photo" in m for m in item["problems"])
+    assert any("clearer scan or photo" in m for m in page_json["problems"])  # on the page itself
+    assert page_json["status"] == "fix"
     assert client.post(url, json={"values": wrong}, headers=CSRF).status_code == 409
     session.expire_all()
     assert (

@@ -179,6 +179,10 @@ def submission_detail(
     return {
         "id": str(sub.id),
         "applicant": {
+            "id": str(app.id),
+            "applications": db.scalar(
+                select(func.count()).where(Submission.applicant_id == app.id)
+            ),
             "name": app.full_name,
             "email": app.email,
             "phone": app.phone,

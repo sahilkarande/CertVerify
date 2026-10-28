@@ -300,6 +300,30 @@ make queue-status   # job counts, failures by error type, workers running, and w
 - A worker that crashes or sleeps leaves its job to another worker after 10 minutes.
 - An unreadable file is not retried: it becomes a "file unreadable" issue for the uploader to fix.
 
+## Deleting student data
+
+Admins only: institution admins for their own institution, platform admins for all. On an applicant's page, use
+**Delete this student's data** at the bottom of the left panel. You must type the student's full name to confirm,
+and the server checks it again.
+
+There are two options:
+
+- **Delete this application:**
+  - Removes the application's documents, files (from storage too), results, issues and messages.
+  - The student keeps their account and can start again.
+- **Erase this student completely:**
+  - Removes every application as above, plus the applicant record (name, email, phone, form number), their
+    student sign-in account, sessions and sign-in codes.
+  - Keeps only a keyed hash of the form number, so `make import-form` skips them instead of bringing them back.
+
+Some things are not deleted:
+
+- **Shared files:** a file another applicant also uploaded is kept.
+- **Staff accounts:** never deleted this way.
+- **The audit trail:** records who erased what, with counts but never the name.
+- **Copies outside the live database:** backups in `backend/data/backups` and the evaluation label files in
+  `backend/data/ocr_eval` still contain the data until you remove them.
+
 ## Staff accounts and sign-in
 
 Staff sign in with email + password, then a 6-digit code from an authenticator app (Google/Microsoft Authenticator,

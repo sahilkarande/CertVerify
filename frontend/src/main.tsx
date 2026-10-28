@@ -71,7 +71,7 @@ function App() {
       <ProcessingBanner />
       <Routes>
         <Route path="/" element={<SubmissionList />} />
-        <Route path="/submissions/:id" element={<SubmissionView />} />
+        <Route path="/submissions/:id" element={<SubmissionView me={me} />} />
         <Route path="/account/password" element={<ChangePassword />} />
         <Route path="/settings" element={<Settings me={me} />} />
         <Route path="*" element={<p className="page-pad">Page not found.</p>} />

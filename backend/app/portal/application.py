@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import iso_utc
 from app.extract.readability import ID_KEYS, MAX_ATTEMPTS, NAME
+from app.intake.pipeline import is_identity_slot
 from app.intake.quality import MESSAGES as QUALITY_MESSAGES
 from app.jobs.queue import latest_job, processing_health
 from app.models import (
@@ -70,12 +71,14 @@ STUDENT_MESSAGES = {
     "page_text_unreadable": "We could not read the text clearly (page {pages}). Please upload a "
     "clearer scan or photo: the whole page, flat, in good light, filling the picture.",
     "semester_marksheets_missing": "Some semester marksheets seem to be missing: we found "
-    "{covered} for results up to semester {highest}.",
+    "{covered} for results up to semester {highest}.{not_seen}",
     "name_mismatch": "The name on this document does not match your application. Check that you "
     "uploaded your own document.",
     "name_partial_match": "The name on this document is different from your application. If your "
     "name changed, a verifier will contact you.",
 }
+# Explained on the page itself (thumbnail, viewer), not repeated as an item-level message.
+SHOWN_ON_PAGES = {"page_quality_poor", "page_needs_confirmation", "page_text_unreadable"}
 TYPE_NAMES = {
     "degree_certificate": "degree certificate",
     "provisional_degree_certificate": "provisional certificate",
@@ -167,9 +170,24 @@ def _issue_text(issue: ValidationIssue) -> str | None:
         TYPE_NAMES.get(t, t.replace("_", " ")) for t in d.get("expected_types", [])
     )
     pages = ", ".join(str(p) for p in d.get("pages", []))
-    return template.format(
-        expected=expected, pages=pages, covered=d.get("covered", "?"), highest=d.get("highest", "?")
+    unseen = d.get("numbers_not_seen") or []
+    not_seen = (
+        f" We could not spot semester {_and_list(unseen)}: check they are in your PDF."
+        if unseen
+        else ""
     )
+    return template.format(
+        expected=expected,
+        pages=pages,
+        covered=d.get("covered", "?"),
+        highest=d.get("highest", "?"),
+        not_seen=not_seen,
+    )
+
+
+def _and_list(numbers: list) -> str:
+    items = [str(n) for n in numbers]
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " or " + items[-1]
 
 
 def _confirm_json(p, labels: dict[str, str]) -> dict | None:
@@ -188,38 +206,76 @@ def _confirm_json(p, labels: dict[str, str]) -> dict | None:
     }
 
 
-def _document_json(db: Session, doc: Document, codes: dict, labels: dict) -> dict:
+# Plain-language notes per page, shown under the page and in the page viewer.
+PAGE_UNREADABLE = (
+    "We could not read the text on this page clearly. Upload a clearer scan or photo: the "
+    "whole page, flat, in good light, filling the picture."
+)
+PAGE_CONFIRM = "We could not read some details clearly. Type them below, or upload a clearer copy."
+PAGE_UNRECOGNISED = (
+    "We could not tell what this page is. Check it is the right document and that the "
+    "whole page is visible."
+)
+
+
+def _page_json(db: Session, p, names: dict, labels: dict, identity: bool, processing: bool) -> dict:
+    problems = [QUALITY_MESSAGES[r] for r in p.quality_reasons if r in QUALITY_MESSAGES]
+    confirm = _confirm_json(p, labels.get(p.detected_type_id, {}))
+    unreadable = p.readability == Readability.RETAKE
+    if unreadable:
+        problems.append(PAGE_UNREADABLE)
+    if confirm:
+        problems.append(PAGE_CONFIRM)
+    unrecognised = (
+        not identity
+        and not processing
+        and p.detected_type_id is None
+        and p.quality_verdict != QualityVerdict.BLANK
+    )
+    if unrecognised:
+        problems.append(PAGE_UNRECOGNISED)
+    if p.quality_verdict == QualityVerdict.RETAKE or unreadable or confirm:
+        status = "fix"  # the student must do something
+    elif problems:
+        status = "check"
+    else:
+        status = "ok"
+    return {
+        "id": str(p.id),
+        "number": p.page_number,
+        "quality": p.quality_verdict.value if p.quality_verdict else None,
+        "status": "waiting" if processing and status == "ok" else status,
+        "recognised": names.get(p.detected_type_id),
+        "semesters": list(p.semesters or []),
+        "problems": problems,
+        "has_image": p.image_file_id is not None,
+        "text_unreadable": unreadable,
+        "confirm": confirm,
+    }
+
+
+def _document_json(db: Session, doc: Document, names: dict, labels: dict) -> dict:
     job = latest_job(db, doc.id)
     processing = job is not None and job.status not in (JobStatus.DONE, JobStatus.FAILED)
     pages = sorted(doc.pages, key=lambda p: p.page_number)
+    identity = is_identity_slot(db, doc)
     return {
         "id": str(doc.id),
+        "file_name": doc.file.original_filename if doc.file else None,
         "uploaded_at": iso_utc(doc.created_at),
         "processing": processing,
         "stage": job.stage.value if job else None,
         "failed": doc.status == DocumentStatus.FAILED,
         "error_message": (doc.processing_notes or {}).get("error_message"),
-        "recognised_as": sorted({codes[p.detected_type_id] for p in pages if p.detected_type_id}),
-        "pages": [
-            {
-                "id": str(p.id),
-                "number": p.page_number,
-                "quality": p.quality_verdict.value if p.quality_verdict else None,
-                "problems": [
-                    QUALITY_MESSAGES[r] for r in p.quality_reasons if r in QUALITY_MESSAGES
-                ],
-                "has_image": p.image_file_id is not None,
-                "text_unreadable": p.readability == Readability.RETAKE,
-                "confirm": _confirm_json(p, labels.get(p.detected_type_id, {})),
-            }
-            for p in pages
-        ],
+        "recognised_as": sorted({names[p.detected_type_id] for p in pages if p.detected_type_id}),
+        "pages": [_page_json(db, p, names, labels, identity, processing) for p in pages],
     }
 
 
 def application_json(db: Session, sub: Submission) -> dict:
     codes = dict(db.execute(select(DocumentType.id, DocumentType.code)).all())
     names = dict(db.execute(select(DocumentType.code, DocumentType.name)).all())
+    names_by_id = {tid: names[code] for tid, code in codes.items()}
     labels = {
         tid: {f["key"]: f["label"] for f in schema}
         for tid, schema in db.execute(select(DocumentType.id, DocumentType.field_schema))
@@ -238,6 +294,7 @@ def application_json(db: Session, sub: Submission) -> dict:
         )
     ).all()
     by_item: dict[str, list[str]] = {}
+    flagged: set[str] = set()  # items with something for the student to do
     doc_slot = {d.id: d.slot_key for d in docs}
     general = []
     for i in issues:
@@ -248,13 +305,15 @@ def application_json(db: Session, sub: Submission) -> dict:
         if i.code == "semester_marksheets_missing":
             slot = "semester_marksheets"
         if slot:
-            by_item.setdefault(slot, []).append(text)
+            flagged.add(slot)
+            if i.code not in SHOWN_ON_PAGES:
+                by_item.setdefault(slot, []).append(text)
         else:
             general.append(text)
 
     checklist = []
     for it in items:
-        mine = [_document_json(db, d, codes, labels) for d in docs if d.slot_key == it.key]
+        mine = [_document_json(db, d, names_by_id, labels) for d in docs if d.slot_key == it.key]
         problems = by_item.get(it.key, [])
         retake = any(p["quality"] == QualityVerdict.RETAKE.value for d in mine for p in d["pages"])
         if not mine:
@@ -263,7 +322,7 @@ def application_json(db: Session, sub: Submission) -> dict:
             state = "attention"  # known from the quick check: no need to wait for the read
         elif any(d["processing"] for d in mine):
             state = "processing"
-        elif problems or any(d["failed"] for d in mine):
+        elif it.key in flagged or any(d["failed"] for d in mine):
             state = "attention"
         else:
             state = "ok"

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  adminApi,
   console_,
   fetchSubmission,
   pageImageUrl,
   type DocumentInfo,
   type Field,
   type Issue,
+  type Me,
   type Page,
   type SubmissionDetail,
 } from "../api";
@@ -28,7 +30,7 @@ interface Selected {
   page: Page;
 }
 
-export default function SubmissionView() {
+export default function SubmissionView({ me }: { me: Me }) {
   const { id } = useParams();
   const [data, setData] = useState<SubmissionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -189,6 +191,8 @@ export default function SubmissionView() {
             </li>
           ))}
         </ul>
+
+        {(me.role === "platform_admin" || me.role === "institution_admin") && <DeleteRecord data={data} />}
       </aside>
 
       {selected ? (
@@ -208,6 +212,68 @@ export default function SubmissionView() {
         <p className="page-pad muted">This applicant has no pages to show.</p>
       )}
     </main>
+  );
+}
+
+/** Same comparison as the server: case, spacing and punctuation do not matter. */
+const sameName = (a: string, b: string) => {
+  const norm = (s: string) => s.normalize("NFKD").toLowerCase().replace(/[^a-z]+/g, " ").trim();
+  return norm(a) !== "" && norm(a) === norm(b);
+};
+
+/** Admins only. Irreversible, so: two clearly different scopes, and the student's name
+ * typed in full before the button works (the server checks it again). */
+function DeleteRecord({ data }: { data: SubmissionDetail }) {
+  const navigate = useNavigate();
+  const [scope, setScope] = useState<"application" | "person">("application");
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const others = data.applicant.applications - 1;
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (scope === "application") await adminApi.deleteApplication(data.id, typed);
+      else await adminApi.eraseApplicant(data.applicant.id, typed);
+      navigate("/");
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <details className="danger-zone">
+      <summary>Delete this student's data</summary>
+      <fieldset className="choices">
+        <label className="choice">
+          <input type="radio" name="scope" checked={scope === "application"} onChange={() => setScope("application")} />
+          <span>
+            <strong>Delete this application</strong>
+            <span className="muted small"> — its documents, files, results and messages. The student keeps their
+              account and can start again.</span>
+          </span>
+        </label>
+        <label className="choice">
+          <input type="radio" name="scope" checked={scope === "person"} onChange={() => setScope("person")} />
+          <span>
+            <strong>Erase this student completely</strong>
+            <span className="muted small"> — {others > 0 ? `all ${others + 1} applications` : "the application"}, every
+              file, their name, email, phone, form number and sign-in account. They will not come back from a later
+              form import.</span>
+          </span>
+        </label>
+      </fieldset>
+      <p className="small warning-text">This cannot be undone. Backups made before today still hold the data.</p>
+      <label className="small">
+        Type <strong>{data.applicant.name}</strong> to confirm
+        <input value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" aria-label="Student's full name" />
+      </label>
+      <button className="erase-button" disabled={busy || !sameName(typed, data.applicant.name)} onClick={run}>
+        {busy ? "Deleting…" : scope === "application" ? "Delete this application" : "Erase this student"}
+      </button>
+      {error && <p className="error-text small" role="alert">{error}</p>}
+    </details>
   );
 }
 

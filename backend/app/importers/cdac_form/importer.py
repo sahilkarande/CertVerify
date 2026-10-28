@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.admin.erasure import is_erased
 from app.importers.cdac_form import schema
 from app.importers.cdac_form.parser import FormRow, ParseResult
 from app.models import (
@@ -29,6 +30,7 @@ class ImportReport:
     applicants_updated: int = 0
     file_refs_created: int = 0
     file_refs_existing: int = 0
+    skipped_erased: int = 0  # people erased on request: never re-imported
     warnings: list[str] = field(default_factory=list)
 
 
@@ -82,8 +84,9 @@ def _attributes(row: FormRow) -> dict:
     }
 
 
-def import_form(db: Session, parsed: ParseResult) -> ImportReport:
-    """Import all rows in one transaction (the caller commits)."""
+def import_form(db: Session, parsed: ParseResult, *, erasure_key: bytes) -> ImportReport:
+    """Import all rows in one transaction (the caller commits). ``erasure_key`` recognises
+    people erased on request (app/admin/erasure.py), who are skipped."""
     report = ImportReport(rows=len(parsed.rows), warnings=list(parsed.warnings))
     rs = ensure_requirement_set(db)
     institution_id = rs.institution_id
@@ -94,6 +97,9 @@ def import_form(db: Session, parsed: ParseResult) -> ImportReport:
     }
 
     for row in parsed.rows:
+        if is_erased(db, erasure_key, institution_id, row.form_number):
+            report.skipped_erased += 1
+            continue
         applicant = db.scalar(
             select(Applicant).where(
                 Applicant.institution_id == institution_id,

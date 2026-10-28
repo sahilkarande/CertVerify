@@ -1,20 +1,25 @@
-"""Administration API. Document types: platform admins. Checklists: institution admins
-(their own institution) and platform admins."""
+"""Administration API. Document types: platform admins. Checklists, and deleting student
+data on request: institution admins (their own institution) and platform admins."""
 
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.admin import registry
-from app.api.deps import get_db_session, require_staff
-from app.models import DocumentType, RequirementItem, RequirementSet, User
+from app.admin import erasure, registry
+from app.api.deps import get_db_session, get_storage, require_staff
+from app.api.routes.review import _check_scope as check_scope
+from app.api.routes.review import _sub as review_sub
+from app.models import Applicant, DocumentType, RequirementItem, RequirementSet, User
 from app.models.enums import UserRole
+from app.services.names import normalize_name
+from app.storage import ObjectStorage
 
 router = APIRouter(prefix="/admin")
 DbSession = Annotated[Session, Depends(get_db_session)]
+Storage = Annotated[ObjectStorage, Depends(get_storage)]
 PlatformAdmin = Annotated[User, Depends(require_staff(UserRole.PLATFORM_ADMIN))]
 Admin = Annotated[User, Depends(require_staff(UserRole.INSTITUTION_ADMIN, UserRole.PLATFORM_ADMIN))]
 
@@ -135,3 +140,52 @@ def add_item(set_id: uuid.UUID, body: NewItem, user: Admin, db: DbSession) -> di
     item = registry.add_item(db, user, rs, body.key, body.label, body.accepted_types, body.required)
     db.commit()
     return {"id": str(item.id)}
+
+
+# ---------- deleting student data on request ----------
+
+
+class ConfirmDelete(BaseModel):
+    confirm: str = Field(max_length=255)  # the student's full name, typed by the admin
+
+
+def _confirmed(applicant: Applicant, typed: str) -> None:
+    """Irreversible: the admin types the student's full name, so the wrong record (or a
+    mis-click) cannot be deleted."""
+    if not typed.strip() or normalize_name(typed) != normalize_name(applicant.full_name or ""):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Type the student's full name exactly as shown to confirm.",
+        )
+
+
+@router.post("/submissions/{submission_id}/delete")
+def delete_application(
+    submission_id: uuid.UUID, body: ConfirmDelete, user: Admin, db: DbSession, storage: Storage
+) -> dict:
+    """One application with its documents and files; the person and account stay."""
+    sub = review_sub(db, user, submission_id)
+    _confirmed(sub.applicant, body.confirm)
+    out = erasure.delete_application(db, sub, user)
+    db.commit()
+    return {**out.counts(), "files_removed": out.purge_files(storage)}
+
+
+@router.post("/applicants/{applicant_id}/erase")
+def erase_applicant(
+    applicant_id: uuid.UUID,
+    body: ConfirmDelete,
+    user: Admin,
+    db: DbSession,
+    storage: Storage,
+    request: Request,
+) -> dict:
+    """Everything about the person: applications, files, name, email, phone, login."""
+    applicant = db.get(Applicant, applicant_id)
+    if applicant is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    check_scope(user, applicant.institution_id)
+    _confirmed(applicant, body.confirm)
+    out = erasure.erase_applicant(db, applicant, user, request.app.state.erasure_key)
+    db.commit()
+    return {**out.counts(), "files_removed": out.purge_files(storage)}

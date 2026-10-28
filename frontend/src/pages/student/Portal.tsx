@@ -211,6 +211,7 @@ function ChecklistCard({ item, intakeId, editable, onChange }: {
   const picker = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ doc: StudentDocument; index: number } | null>(null);
 
   const upload = async (file: File | undefined) => {
     if (!file) return;
@@ -228,6 +229,13 @@ function ChecklistCard({ item, intakeId, editable, onChange }: {
     }
   };
 
+  const pagesToFix = item.documents.flatMap((d) =>
+    d.pages.map((p, index) => ({ d, p, index })).filter(({ p }) => p.status === "fix" || p.status === "check"),
+  );
+  const hasFiles = item.documents.length > 0;
+  // Keep the open page in step with refreshed data (e.g. after typing the details).
+  const viewDoc = viewing && item.documents.find((d) => d.id === viewing.doc.id);
+
   return (
     <section className={`card item ${item.state}`}>
       <div className="row-between">
@@ -235,53 +243,177 @@ function ChecklistCard({ item, intakeId, editable, onChange }: {
         <span className={`pill st-${item.state}`}>{STATE_LABEL[item.state]}</span>
       </div>
       {item.expected.length > 0 && (
-        <p className="muted small">Accepted: {item.expected.join(" or ")}</p>
+        <p className="muted small">What to upload: {item.expected.join(" or ")}</p>
       )}
-      {item.problems.map((p) => <p key={p} className="warning-text small">⚠ {p}</p>)}
+
+      {(item.problems.length > 0 || pagesToFix.length > 0) && (
+        <div className="todo">
+          <div className="todo-title">What needs your attention</div>
+          <ul>
+            {item.problems.map((p) => <li key={p}>{p}</li>)}
+            {pagesToFix.map(({ d, p, index }) => (
+              <li key={p.id} className={p.status}>
+                <button className="link-button" onClick={() => setViewing({ doc: d, index })}>
+                  Page {p.number}
+                </button>
+                : {p.problems[0]}
+                {p.problems.length > 1 && ` (+${p.problems.length - 1} more)`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {item.documents.map((d) => (
-        <DocumentRow key={d.id} doc={d} editable={editable} onChange={onChange} />
+        <FileCard key={d.id} doc={d} editable={editable} onChange={onChange}
+          onOpen={(index) => setViewing({ doc: d, index })} />
       ))}
+
       {editable && (
         <div className="upload-buttons">
           <input ref={camera} type="file" accept="image/*" capture="environment" hidden
             onChange={(e) => upload(e.target.files?.[0])} />
           <input ref={picker} type="file" accept="application/pdf,image/*" hidden
             onChange={(e) => upload(e.target.files?.[0])} />
-          <button className="secondary" disabled={busy} onClick={() => camera.current?.click()}>📷 Take photo</button>
-          <button className="secondary" disabled={busy} onClick={() => picker.current?.click()}>📄 Choose file</button>
+          <button className="secondary" disabled={busy} onClick={() => camera.current?.click()}>
+            📷 {hasFiles ? "Take another photo" : "Take photo"}
+          </button>
+          <button className="secondary" disabled={busy} onClick={() => picker.current?.click()}>
+            📄 {hasFiles ? "Upload another file" : "Choose file"}
+          </button>
           {busy && <span className="muted small">Uploading…</span>}
         </div>
       )}
+      {hasFiles && editable && item.state === "attention" && (
+        <p className="muted small">
+          To replace a file: upload the new one, then remove the old one.
+        </p>
+      )}
       {error && <p className="error-text small" role="alert">{error}</p>}
+
+      {viewing && viewDoc && (
+        <PageViewer doc={viewDoc} index={Math.min(viewing.index, viewDoc.pages.length - 1)}
+          editable={editable} onIndex={(index) => setViewing({ doc: viewDoc, index })}
+          onClose={() => setViewing(null)} onChange={onChange} />
+      )}
     </section>
   );
 }
 
-function DocumentRow({ doc, editable, onChange }: { doc: StudentDocument; editable: boolean; onChange: () => void }) {
+const PAGE_BADGE: Record<StudentPage["status"], string> = { ok: "✓", check: "!", fix: "✕", waiting: "…" };
+const PAGE_STATUS_TEXT: Record<StudentPage["status"], string> = {
+  ok: "Looks good",
+  check: "Worth a look",
+  fix: "Needs fixing",
+  waiting: "Being checked",
+};
+
+function pageCaption(p: StudentPage): string {
+  if (p.semesters.length) return `Semester ${p.semesters.join(" & ")}`;
+  return p.recognised ?? `Page ${p.number}`;
+}
+
+function FileCard({ doc, editable, onChange, onOpen }: {
+  doc: StudentDocument; editable: boolean; onChange: () => void; onOpen: (index: number) => void;
+}) {
   const remove = async () => {
-    if (!window.confirm("Remove this file?")) return;
+    if (!window.confirm(`Remove ${doc.file_name ?? "this file"}? You can upload it again later.`)) return;
     await studentApi.remove(doc.id);
     onChange();
   };
+  const uploaded = doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString() : null;
   return (
-    <div className="doc-row">
-      <div className="thumbs">
-        {doc.pages.filter((p) => p.has_image).slice(0, 6).map((p) => (
-          <figure key={p.id} className={`thumb q-${p.quality}`}>
-            <img src={studentApi.pageImageUrl(p.id)} alt={`Page ${p.number}`} loading="lazy" />
-            <figcaption>{p.number}</figcaption>
-          </figure>
+    <div className="file-card">
+      <div className="file-head">
+        <div className="file-name" title={doc.file_name ?? undefined}>📎 {doc.file_name ?? "Uploaded file"}</div>
+        <div className="muted small">
+          {doc.pages.length > 0 && `${doc.pages.length} page${doc.pages.length === 1 ? "" : "s"}`}
+          {uploaded && ` · uploaded ${uploaded}`}
+          {doc.processing && " · checking…"}
+        </div>
+      </div>
+      {doc.failed && <p className="error-text small">{doc.error_message ?? "This file could not be opened. Please upload it again."}</p>}
+      <div className="page-grid">
+        {doc.pages.map((p, i) => (
+          <button key={p.id} className={`page-tile ps-${p.status}`} onClick={() => onOpen(i)}
+            title={`Page ${p.number}: ${PAGE_STATUS_TEXT[p.status]} — click to view`}>
+            {p.has_image
+              ? <img src={studentApi.pageImageUrl(p.id)} alt={`Page ${p.number}`} loading="lazy" />
+              : <span className="no-image">No preview</span>}
+            <span className="page-badge" aria-label={PAGE_STATUS_TEXT[p.status]}>{PAGE_BADGE[p.status]}</span>
+            <span className="page-caption">{p.number}. {pageCaption(p)}</span>
+          </button>
         ))}
         {doc.processing && doc.pages.length === 0 && <span className="muted small">Checking the file…</span>}
       </div>
-      {doc.failed && <p className="error-text small">{doc.error_message ?? "This file could not be opened."}</p>}
-      {doc.pages.flatMap((p) => p.problems.map((m) => (
-        <p key={`${p.id}${m}`} className="warning-text small">Page {p.number}: {m}</p>
-      )))}
-      {editable && doc.pages.filter((p) => p.confirm).map((p) => (
-        <ConfirmForm key={`${p.id}-confirm`} page={p} onDone={onChange} />
-      ))}
-      {editable && <button className="link-button small" onClick={remove}>Remove this file</button>}
+      <div className="file-actions">
+        {doc.pages.length > 0 && <button className="link-button small" onClick={() => onOpen(0)}>View pages</button>}
+        {editable && <button className="link-button small danger-link" onClick={remove}>Remove file</button>}
+      </div>
+    </div>
+  );
+}
+
+/** A page at full size, with what we recognised and what (if anything) to fix. */
+function PageViewer({ doc, index, editable, onIndex, onClose, onChange }: {
+  doc: StudentDocument; index: number; editable: boolean;
+  onIndex: (i: number) => void; onClose: () => void; onChange: () => void;
+}) {
+  const page = doc.pages[index];
+  const close = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    close.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return;
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight" && index < doc.pages.length - 1) onIndex(index + 1);
+      if (e.key === "ArrowLeft" && index > 0) onIndex(index - 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [index, doc.pages.length, onIndex, onClose]);
+  if (!page) return null;
+  return (
+    <div className="viewer-backdrop" onClick={onClose}>
+      <div className="viewer" role="dialog" aria-modal="true" aria-label={`Page ${page.number}`}
+        onClick={(e) => e.stopPropagation()}>
+        <div className="viewer-bar">
+          <span className="small">
+            <strong>{doc.file_name ?? "Uploaded file"}</strong> · page {page.number} of {doc.pages.length}
+          </span>
+          <button ref={close} className="link-button" onClick={onClose} aria-label="Close">✕ Close</button>
+        </div>
+        <div className="viewer-body">
+          <div className="viewer-image">
+            {page.has_image
+              ? <img src={studentApi.pageImageUrl(page.id)} alt={`Page ${page.number}`} />
+              : <p className="muted">No preview for this page.</p>}
+          </div>
+          <div className="viewer-side">
+            <span className={`pill ps-pill-${page.status}`}>{PAGE_BADGE[page.status]} {PAGE_STATUS_TEXT[page.status]}</span>
+            <div>
+              <div className="muted small">We recognised this page as</div>
+              <div className="strong">
+                {page.recognised ?? (page.status === "waiting" ? "Still checking…" : "Not recognised")}
+                {page.semesters.length > 0 && ` · semester ${page.semesters.join(" & ")}`}
+              </div>
+            </div>
+            {page.problems.length > 0 ? (
+              <div>
+                <div className="muted small">What to fix</div>
+                <ul className="viewer-problems">
+                  {page.problems.map((m) => <li key={m}>{m}</li>)}
+                </ul>
+              </div>
+            ) : page.status !== "waiting" && <p className="small">Nothing to fix on this page.</p>}
+            {editable && page.confirm && <ConfirmForm page={page} onDone={onChange} />}
+            <div className="viewer-nav">
+              <button className="secondary" disabled={index === 0} onClick={() => onIndex(index - 1)}>← Previous</button>
+              <button className="secondary" disabled={index >= doc.pages.length - 1} onClick={() => onIndex(index + 1)}>Next →</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -313,7 +445,7 @@ function ConfirmForm({ page, onDone }: { page: StudentPage; onDone: () => void }
   };
   return (
     <form className="confirm-form" onSubmit={submit}>
-      <div className="strong small">Page {page.number}: please type these exactly as printed</div>
+      <div className="strong small">Type these exactly as printed on this page</div>
       {confirm.mismatched.length > 0 && (
         <p className="error-text small" role="alert">
           What you typed for {confirm.mismatched.join(", ")} does not match what we could read.

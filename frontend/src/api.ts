@@ -82,7 +82,14 @@ export interface Message {
 
 export interface SubmissionDetail {
   id: string;
-  applicant: { name: string; email: string | null; phone: string | null; form_number: string | null };
+  applicant: {
+    id: string;
+    applications: number;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    form_number: string | null;
+  };
   status: string;
   submitted_at: string | null;
   attributes: Record<string, unknown>;
@@ -200,7 +207,18 @@ export interface RequirementSetInfo {
 }
 
 const ADMIN = `${API}/admin`;
+export interface DeletionResult {
+  submissions: number;
+  documents: number;
+  account_deleted: boolean;
+  files_removed: number;
+}
+
 export const adminApi = {
+  deleteApplication: (submissionId: string, confirm: string) =>
+    request<DeletionResult>("POST", `${ADMIN}/submissions/${submissionId}/delete`, { confirm }),
+  eraseApplicant: (applicantId: string, confirm: string) =>
+    request<DeletionResult>("POST", `${ADMIN}/applicants/${applicantId}/erase`, { confirm }),
   types: () => request<{ types: DocType[]; extractable: Record<string, string> }>("GET", `${ADMIN}/document-types`),
   createType: (body: { code: string; name: string; category: string; fields: FieldSpec[]; title_phrases: string[] }) =>
     request<{ id: string }>("POST", `${ADMIN}/document-types`, body),
@@ -290,15 +308,20 @@ export interface StudentPage {
   id: string;
   number: number;
   quality: string | null;
-  problems: string[];
+  // fix: the student must act; check: worth a look; ok; waiting: still being checked
+  status: "ok" | "check" | "fix" | "waiting";
+  recognised: string | null; // what we think this page is, e.g. "Degree semester marksheet"
+  semesters: number[];
+  problems: string[]; // plain language, page-specific
   has_image: boolean;
-  text_unreadable: boolean; // the checklist item's problems say what to do
+  text_unreadable: boolean;
   // Values we could not read clearly: the student types them as printed (null = not printed).
   confirm: { fields: ConfirmField[]; mismatched: string[]; attempts_left: number } | null;
 }
 
 export interface StudentDocument {
   id: string;
+  file_name: string | null;
   uploaded_at: string | null;
   processing: boolean;
   stage: string | null;
