@@ -111,9 +111,14 @@ export default function SubmissionView({ me }: { me: Me }) {
   return (
     <main className="review-layout">
       <aside className="sidebar">
-        <Link to="/" className="back">
-          ← All applicants
-        </Link>
+        {data.test_run ? (
+          <Link to={`/testing/${data.test_run.id}`} className="back">← Test run: {data.test_run.name}</Link>
+        ) : (
+          <Link to="/" className="back">
+            ← All applicants
+          </Link>
+        )}
+        {data.test_run && <span className="pill test-pill">Test student</span>}
         <h1 className="applicant-name">{data.applicant.name}</h1>
         <span className={`verdict ${data.verdict}`}>{VERDICT_LABELS[data.verdict]}</span>
         <DecisionPanel data={data} reload={() => load()} />

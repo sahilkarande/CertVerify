@@ -10,7 +10,11 @@ port=${PORT:-8000}
 worker=""
 if [ "${2:-}" != "no-worker" ]; then
   # Own session, so Ctrl+C reaches only the web server and the worker gets one clean stop.
-  setsid .venv/bin/python -m app.jobs.worker &
+  # Restarted when the code changes, like the web server: a worker still running old code
+  # fails on anything new (it once failed every Testing Lab upload). It is given up to two
+  # minutes to finish the document it is on.
+  setsid .venv/bin/watchfiles --filter python --sigint-timeout 120 \
+    ".venv/bin/python -m app.jobs.worker" app &
   worker=$!
   trap 'echo "stopping the worker after its current document..."; kill -TERM "$worker" 2>/dev/null; wait "$worker"' EXIT
 fi

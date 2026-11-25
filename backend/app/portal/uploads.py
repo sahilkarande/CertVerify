@@ -89,7 +89,7 @@ def add_document(
     )
     db.add(doc)
     db.flush()
-    job = enqueue_upload(db, doc.id)
+    job = enqueue_upload(db, doc.id, test=sub.test_run_id is not None)
     record_event(
         db,
         action="document.uploaded",

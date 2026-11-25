@@ -19,6 +19,7 @@ class DocumentCategory(StrEnum):
 class ApplicantSource(StrEnum):
     FORM_IMPORT = "form_import"  # seed data from the Google Form export
     PORTAL = "portal"  # uploaded directly on the platform
+    TEST = "test"  # Testing Lab: not a real applicant
 
 
 class SubmissionStatus(StrEnum):

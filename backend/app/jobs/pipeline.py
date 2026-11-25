@@ -22,6 +22,7 @@ from app.jobs.queue import (
     CHECK_DOCUMENT,
     PROCESS_DOCUMENT,
     READ_DOCUMENT,
+    TEST_PRIORITY,
     UPLOAD_PRIORITY,
     enqueue_document,
     progress,
@@ -56,7 +57,9 @@ def run_job(db: Session, storage: ObjectStorage, engines: Engines, job: Job) -> 
         return
     if job.kind == CHECK_DOCUMENT:
         if check_document(db, storage, job, doc):
-            enqueue_document(db, doc.id, priority=UPLOAD_PRIORITY, kind=READ_DOCUMENT)
+            test = db.get(Submission, doc.submission_id).test_run_id is not None
+            priority = TEST_PRIORITY if test else UPLOAD_PRIORITY
+            enqueue_document(db, doc.id, priority=priority, kind=READ_DOCUMENT)
             db.commit()
     elif job.kind == READ_DOCUMENT:
         read_document(db, storage, engines, job, doc)

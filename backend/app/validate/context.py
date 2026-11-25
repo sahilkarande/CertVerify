@@ -76,6 +76,15 @@ ID_MIN_CONFIDENCE = 0.85
 ID_MIN_LENGTH = 6
 
 
+def _same_world(submission: Submission):
+    """Real applicants are compared only with real applicants, and Testing Lab students only
+    with others in the same test run: test copies of a real student's documents must not
+    flag the real student (or the test) as sharing files or IDs with someone else."""
+    if submission.test_run_id is None:
+        return Submission.test_run_id.is_(None)
+    return Submission.test_run_id == submission.test_run_id
+
+
 def load_context(db: Session, submission: Submission) -> SubmissionContext:
     codes = dict(db.execute(select(DocumentType.id, DocumentType.code)).all())
     docs = db.scalars(
@@ -108,7 +117,12 @@ def load_context(db: Session, submission: Submission) -> SubmissionContext:
     for sha, _ in db.execute(
         select(StoredFile.sha256, Document.submission_id)
         .join(Document, Document.file_id == StoredFile.id)
-        .where(StoredFile.sha256.in_(hashes), Document.submission_id != submission.id)
+        .join(Submission, Submission.id == Document.submission_id)
+        .where(
+            StoredFile.sha256.in_(hashes),
+            Document.submission_id != submission.id,
+            _same_world(submission),
+        )
         .distinct()
     ):
         shared_hashes[sha] = shared_hashes.get(sha, 0) + 1
@@ -124,11 +138,13 @@ def load_context(db: Session, submission: Submission) -> SubmissionContext:
         for value, _ in db.execute(
             select(ExtractedField.value, Document.submission_id)
             .join(Document, Document.id == ExtractedField.document_id)
+            .join(Submission, Submission.id == Document.submission_id)
             .where(
                 ExtractedField.field_key.in_(ID_FIELDS),
                 ExtractedField.value.in_(own_ids),
                 ExtractedField.confidence >= ID_MIN_CONFIDENCE,
                 Document.submission_id != submission.id,
+                _same_world(submission),
             )
             .distinct()
         ):

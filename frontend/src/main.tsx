@@ -8,6 +8,7 @@ import Portal from "./pages/student/Portal";
 import SignIn from "./pages/SignIn";
 import SubmissionList from "./pages/SubmissionList";
 import SubmissionView from "./pages/SubmissionView";
+import { TestRunView, TestingLab } from "./pages/TestingLab";
 import "./styles.css";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -61,6 +62,7 @@ function App() {
           <span className="small">
             {me.name} · <span className="muted">{ROLE_LABELS[me.role] ?? me.role}{me.institution ? `, ${me.institution}` : ""}</span>
           </span>
+          {me.role === "platform_admin" && <Link to="/testing" className="small">Testing Lab</Link>}
           {(me.role === "platform_admin" || me.role === "institution_admin") && (
             <Link to="/settings" className="small">Settings</Link>
           )}
@@ -74,6 +76,8 @@ function App() {
         <Route path="/submissions/:id" element={<SubmissionView me={me} />} />
         <Route path="/account/password" element={<ChangePassword />} />
         <Route path="/settings" element={<Settings me={me} />} />
+        {me.role === "platform_admin" && <Route path="/testing" element={<TestingLab />} />}
+        {me.role === "platform_admin" && <Route path="/testing/:id" element={<TestRunView />} />}
         <Route path="*" element={<p className="page-pad">Page not found.</p>} />
       </Routes>
     </BrowserRouter>

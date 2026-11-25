@@ -302,10 +302,17 @@ def set_page_type(db: Session, user: User, page: DocumentPage, code: str) -> Doc
     from app.extract.readability import assess_page
     from app.models.enums import ClassificationMethod
 
+    # Keep what the machine said (Testing Lab type accuracy; a second change keeps the first).
+    machine = next(
+        (e for e in page.classification_evidence or [] if e.startswith("machine:")), None
+    )
+    if machine is None:
+        old = db.get(DocumentType, page.detected_type_id) if page.detected_type_id else None
+        machine = f"machine:{old.code if old else ''}"
     page.detected_type_id = t.id
     page.classification_method = ClassificationMethod.HUMAN
     page.classification_confidence = 1.0
-    page.classification_evidence = [f"human:{user.id}"]
+    page.classification_evidence = [f"human:{user.id}", machine]
     sub = page.document.submission
     db.flush()
     extract_page_fields(db, page)  # the values to read depend on the type

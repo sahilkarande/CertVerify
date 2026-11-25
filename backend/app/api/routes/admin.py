@@ -1,21 +1,51 @@
-"""Administration API. Document types: platform admins. Checklists, and deleting student
-data on request: institution admins (their own institution) and platform admins."""
+"""Administration API. Document types and the Testing Lab: platform admins. Checklists, and
+deleting student data on request: institution admins (their own institution) and platform
+admins."""
 
+import csv
+import io
+import time
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.admin import erasure, registry
 from app.api.deps import get_db_session, get_storage, require_staff
+from app.api.routes.review import PRIVATE
 from app.api.routes.review import _check_scope as check_scope
 from app.api.routes.review import _sub as review_sub
-from app.models import Applicant, DocumentType, RequirementItem, RequirementSet, User
+from app.jobs.queue import retry_failed
+from app.models import (
+    Applicant,
+    Document,
+    DocumentType,
+    RequirementItem,
+    RequirementSet,
+    Submission,
+    TestRun,
+    User,
+)
 from app.models.enums import UserRole
+from app.portal.application import DEGREE_STATUSES
+from app.portal.uploads import add_document, read_capped
 from app.services.names import normalize_name
 from app.storage import ObjectStorage
+from app.testing import metrics as testing_metrics
+from app.testing import runs
 
 router = APIRouter(prefix="/admin")
 DbSession = Annotated[Session, Depends(get_db_session)]
@@ -189,3 +219,180 @@ def erase_applicant(
     out = erasure.erase_applicant(db, applicant, user, request.app.state.erasure_key)
     db.commit()
     return {**out.counts(), "files_removed": out.purge_files(storage)}
+
+
+# ---------- Testing Lab (platform admins) ----------
+
+BASELINE_TTL_S = 120
+_baseline_cache: dict = {}
+
+
+class NewRun(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    notes: str | None = Field(default=None, max_length=4000)
+    requirement_set_id: uuid.UUID | None = None
+
+
+class NewTestStudent(BaseModel):
+    name: str = Field(default="", max_length=255)
+    degree_status: str = Field(default="has_degree", max_length=64)
+    claimed_aggregate_percent: float | None = Field(default=None, ge=0, le=100)
+
+
+def _run(db: Session, run_id: uuid.UUID) -> TestRun:
+    run = db.get(TestRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Test run not found")
+    return run
+
+
+def _metrics_for(db: Session, target: str) -> dict:
+    """``baseline`` (real applicants, cached briefly: it changes slowly) or a run id."""
+    if target == "baseline":
+        hit = _baseline_cache.get("v")
+        if hit and time.monotonic() - hit[0] < BASELINE_TTL_S:
+            return hit[1]
+        m = testing_metrics.compute(db, testing_metrics.baseline_ids(db))
+        _baseline_cache["v"] = (time.monotonic(), m)
+        return m
+    try:
+        run = _run(db, uuid.UUID(target))
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Test run not found") from exc
+    return testing_metrics.compute(db, runs.run_submissions(db, run.id))
+
+
+@router.get("/test-runs")
+def list_runs(user: PlatformAdmin, db: DbSession) -> dict:
+    all_runs = db.scalars(select(TestRun).order_by(TestRun.created_at.desc())).all()
+    sets = db.scalars(select(RequirementSet).where(RequirementSet.is_active.is_(True))).all()
+    return {
+        "runs": [runs.run_summary(db, r) for r in all_runs],
+        "checklists": [{"id": str(s.id), "name": s.name} for s in sets],
+    }
+
+
+@router.post("/test-runs", status_code=status.HTTP_201_CREATED)
+def create_run(body: NewRun, user: PlatformAdmin, db: DbSession) -> dict:
+    try:
+        run = runs.create_run(db, user, body.name, body.notes, body.requirement_set_id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Choose a checklist.") from exc
+    db.commit()
+    return runs.run_summary(db, run)
+
+
+@router.get("/test-runs/{run_id}")
+def get_run(run_id: uuid.UUID, user: PlatformAdmin, db: DbSession, response: Response) -> dict:
+    run = _run(db, run_id)
+    response.headers.update(PRIVATE)
+    items = db.scalars(
+        select(RequirementItem)
+        .where(RequirementItem.requirement_set_id == run.requirement_set_id)
+        .order_by(RequirementItem.position)
+    ).all()
+    return {
+        "run": runs.run_summary(db, run),
+        "students": runs.students_json(db, run),
+        "checklist": [{"key": i.key, "label": i.label} for i in items],
+        "degree_statuses": DEGREE_STATUSES,
+        "metrics": testing_metrics.compute(db, runs.run_submissions(db, run.id)),
+    }
+
+
+@router.get("/test-runs/metrics/{target}")
+def metrics(target: str, user: PlatformAdmin, db: DbSession) -> dict:
+    """What to compare a run with: ``baseline`` (real applicants) or another run's id."""
+    return _metrics_for(db, target)
+
+
+@router.post("/test-runs/{run_id}/students", status_code=status.HTTP_201_CREATED)
+def add_test_student(
+    run_id: uuid.UUID, body: NewTestStudent, user: PlatformAdmin, db: DbSession
+) -> dict:
+    run = _run(db, run_id)
+    if body.degree_status not in DEGREE_STATUSES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown degree status.")
+    sub = runs.add_student(db, run, runs.TestStudent(
+        body.name, body.degree_status, body.claimed_aggregate_percent))  # fmt: skip
+    db.commit()
+    return {"id": str(sub.id)}
+
+
+@router.post("/test-runs/{run_id}/students/{submission_id}/documents", status_code=202)
+async def upload_test_document(
+    run_id: uuid.UUID,
+    submission_id: uuid.UUID,
+    user: PlatformAdmin,
+    db: DbSession,
+    storage: Storage,
+    slot: Annotated[str, Form(max_length=64)],
+    file: Annotated[UploadFile, File()],
+) -> dict:
+    sub = db.get(Submission, submission_id)
+    if sub is None or sub.test_run_id != run_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Test student not found")
+    data = await read_capped(file)
+    doc, job_id = add_document(db, storage, sub, slot, data, file.filename, user.id)
+    db.commit()
+    return {"document_id": str(doc.id), "job_id": str(job_id)}
+
+
+@router.post("/test-runs/{run_id}/retry")
+def retry_run(run_id: uuid.UUID, user: PlatformAdmin, db: DbSession) -> dict:
+    """Process again this run's files whose processing failed."""
+    run = _run(db, run_id)
+    docs = db.scalars(
+        select(Document.id)
+        .join(Submission, Submission.id == Document.submission_id)
+        .where(Submission.test_run_id == run.id)
+    ).all()
+    n = retry_failed(db, docs)
+    db.commit()
+    return {"queued": n}
+
+
+class ConfirmRunDelete(BaseModel):
+    confirm: str = Field(max_length=255)  # the run's name
+
+
+@router.post("/test-runs/{run_id}/delete")
+def delete_run(
+    run_id: uuid.UUID,
+    body: ConfirmRunDelete,
+    user: PlatformAdmin,
+    db: DbSession,
+    storage: Storage,
+    request: Request,
+) -> dict:
+    run = _run(db, run_id)
+    if body.confirm.strip() != run.name:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "Type the test run's name to confirm."
+        )
+    out = runs.delete_run(db, run, user, request.app.state.erasure_key)
+    db.commit()
+    return {**out.counts(), "files_removed": out.purge_files(storage)}
+
+
+@router.get("/test-runs/{run_id}/export.csv")
+def export_csv(run_id: uuid.UUID, user: PlatformAdmin, db: DbSession) -> Response:
+    """This run's metrics next to the baseline, for a spreadsheet."""
+    run = _run(db, run_id)
+    mine = testing_metrics.compute(db, runs.run_submissions(db, run.id))
+    base = _metrics_for(db, "baseline")
+    base_by_key = {m["key"]: m for s in base["sections"] for m in s["metrics"]}
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["section", "metric", "unit", "this run", "out of", "baseline", "out of"])
+    for s in mine["sections"]:
+        for m in s["metrics"]:
+            b = base_by_key.get(m["key"], {})
+            w.writerow([s["title"], m["label"], m["unit"], m["value"], m["n"],
+                        b.get("value"), b.get("n")])  # fmt: skip
+    safe = "".join(c if c.isalnum() else "-" for c in run.name)[:60] or "test-run"
+    return Response(
+        buf.getvalue(),
+        media_type="text/csv",
+        headers={**PRIVATE, "Content-Disposition": f'attachment; filename="{safe}-metrics.csv"'},
+    )

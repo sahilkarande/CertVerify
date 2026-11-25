@@ -19,6 +19,7 @@ from app.models import (
     DocumentType,
     ExtractedField,
     Submission,
+    TestRun,
     User,
     ValidationIssue,
 )
@@ -58,6 +59,7 @@ def submission_list(db: Session, institution_id: uuid.UUID | None) -> list[dict]
         .join(Applicant, Applicant.id == Submission.applicant_id)
         .order_by(Applicant.full_name)
     )
+    q = q.where(Submission.test_run_id.is_(None))  # Testing Lab students live on its page
     if institution_id is not None:
         q = q.where(Applicant.institution_id == institution_id)
     for sub, app in db.execute(q):
@@ -189,6 +191,9 @@ def submission_detail(
             "form_number": app.external_ref,
         },
         "status": sub.status.value,
+        "test_run": {"id": str(sub.test_run_id), "name": db.get(TestRun, sub.test_run_id).name}
+        if sub.test_run_id
+        else None,
         "submitted_at": iso_utc(sub.submitted_at),
         "attributes": {k: v for k, v in sub.attributes.items() if k != "guardian_phone"},
         "verdict": verdict(open_sev),

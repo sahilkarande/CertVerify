@@ -261,6 +261,9 @@ function ChecklistCard({ item, intakeId, editable, onChange }: {
               </li>
             ))}
           </ul>
+          {pagesToFix.some(({ p }) => p.photo_tips) && (
+            <p className="small">Open a page to see exactly what to fix and how to take a clear picture.</p>
+          )}
         </div>
       )}
 
@@ -406,6 +409,7 @@ function PageViewer({ doc, index, editable, onIndex, onClose, onChange }: {
                 </ul>
               </div>
             ) : page.status !== "waiting" && <p className="small">Nothing to fix on this page.</p>}
+            {page.photo_tips && <PhotoTips />}
             {editable && page.confirm && <ConfirmForm page={page} onDone={onChange} />}
             <div className="viewer-nav">
               <button className="secondary" disabled={index === 0} onClick={() => onIndex(index - 1)}>← Previous</button>
@@ -414,6 +418,23 @@ function PageViewer({ doc, index, editable, onIndex, onClose, onChange }: {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Exactly how to take a picture we can read: shown wherever the picture is the problem. */
+function PhotoTips() {
+  return (
+    <div className="photo-tips">
+      <div className="strong small">How to take a clear picture</div>
+      <ol>
+        <li>Put the page flat on a table, in daylight or under a bright light.</li>
+        <li>Hold your phone straight above the page, not at an angle.</li>
+        <li>Move closer until the page fills the screen. Do not zoom.</li>
+        <li>Tap the page on the screen to focus, hold still, then take the picture.</li>
+        <li>Check there is no shadow, glare or finger on the page, and every corner is visible.</li>
+      </ol>
+      <div className="muted small">Have the original PDF or a scan? Upload that instead: it is always clearer.</div>
     </div>
   );
 }

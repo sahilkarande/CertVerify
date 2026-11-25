@@ -1,7 +1,7 @@
 VENV := backend/.venv
 PY   := $(VENV)/bin/python
 
-.PHONY: setup run run-lan test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract readability extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user worker check-worker enqueue queue-status corrections-report export-corrections train-classifier models activate-model
+.PHONY: setup run run-lan test lint format migrate seed revision import-form import-folder drive-auth drive-download import-status process quality-report ocr ocr-eval paddle-setup classify classify-eval classification-report extract readability extract-eval extraction-report validate validation-report frontend-install frontend-dev frontend-build create-user list-users reset-2fa set-password disable-user enable-user worker check-worker enqueue queue-status retry-failed corrections-report export-corrections train-classifier models activate-model
 
 setup:
 	python3 -m venv $(VENV)
@@ -174,6 +174,10 @@ enqueue:
 
 queue-status:
 	cd backend && .venv/bin/python -m app.cli queue-status
+
+# Process again every document whose processing failed (after fixing the cause)
+retry-failed:
+	cd backend && .venv/bin/python -m app.cli retry-failed
 
 # --- Verifier console & learning loop (Phase 12) ---
 # How often verifiers confirm or correct each extracted value (accuracy on real use)

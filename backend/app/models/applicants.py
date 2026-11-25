@@ -61,6 +61,10 @@ class Submission(IdMixin, TimestampMixin, Base):
     )
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decision_note: Mapped[str | None] = mapped_column(Text)
+    # Set for Testing Lab submissions: never shown or counted with real applicants.
+    test_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("test_runs.id", ondelete="CASCADE"), index=True
+    )
 
     applicant: Mapped[Applicant] = relationship(back_populates="submissions")
     documents: Mapped[list["Document"]] = relationship(  # noqa: F821

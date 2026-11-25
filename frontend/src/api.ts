@@ -91,6 +91,7 @@ export interface SubmissionDetail {
     form_number: string | null;
   };
   status: string;
+  test_run: { id: string; name: string } | null;
   submitted_at: string | null;
   attributes: Record<string, unknown>;
   verdict: Verdict;
@@ -231,6 +232,73 @@ export const adminApi = {
     request<{ id: string }>("POST", `${ADMIN}/requirement-sets/${setId}/items`, body),
 };
 
+// --- Testing Lab (platform admins) ------------------------------------------------
+
+export interface Metric {
+  key: string;
+  label: string;
+  value: number | null;
+  unit: "%" | "count" | "s" | "score";
+  n: number | null; // what a rate is out of
+  better: "higher" | "lower" | null;
+}
+
+export interface Metrics {
+  sections: { key: string; title: string; metrics: Metric[] }[];
+  document_types: Record<string, number>;
+  issues: Record<string, number>; // students per open issue
+}
+
+export interface RunSummary {
+  id: string;
+  name: string;
+  notes: string | null;
+  created_at: string;
+  created_by: string | null;
+  students: number;
+  pages: number;
+}
+
+export interface TestStudentRow {
+  id: string;
+  name: string;
+  documents: number;
+  pages: number;
+  processing: number;
+  failed: number; // files whose processing gave up
+  verdict: Verdict;
+  reviewed_pages: number;
+}
+
+export interface RunDetail {
+  run: RunSummary;
+  students: TestStudentRow[];
+  checklist: { key: string; label: string }[];
+  degree_statuses: Record<string, string>;
+  metrics: Metrics;
+}
+
+const LAB = `${API}/admin/test-runs`;
+export const labApi = {
+  runs: () => request<{ runs: RunSummary[]; checklists: { id: string; name: string }[] }>("GET", LAB),
+  create: (name: string, notes: string, requirement_set_id: string | null) =>
+    request<RunSummary>("POST", LAB, { name, notes: notes || null, requirement_set_id }),
+  run: (id: string) => request<RunDetail>("GET", `${LAB}/${id}`),
+  metrics: (target: string) => request<Metrics>("GET", `${LAB}/metrics/${target}`),
+  addStudent: (runId: string, body: { name: string; degree_status: string; claimed_aggregate_percent: number | null }) =>
+    request<{ id: string }>("POST", `${LAB}/${runId}/students`, body),
+  upload: (runId: string, studentId: string, slot: string, file: File) => {
+    const form = new FormData();
+    form.append("slot", slot);
+    form.append("file", file);
+    return request<{ document_id: string }>("POST", `${LAB}/${runId}/students/${studentId}/documents`, form);
+  },
+  remove: (runId: string, confirm: string) =>
+    request<DeletionResult>("POST", `${LAB}/${runId}/delete`, { confirm }),
+  retry: (runId: string) => request<{ queued: number }>("POST", `${LAB}/${runId}/retry`),
+  exportUrl: (runId: string) => `${LAB}/${runId}/export.csv`,
+};
+
 // --- sign-in ---------------------------------------------------------------------
 
 export interface Me {
@@ -314,6 +382,7 @@ export interface StudentPage {
   semesters: number[];
   problems: string[]; // plain language, page-specific
   has_image: boolean;
+  photo_tips: boolean; // the picture itself is the problem: show how to take a clear one
   text_unreadable: boolean;
   // Values we could not read clearly: the student types them as printed (null = not printed).
   confirm: { fields: ConfirmField[]; mismatched: string[]; attempts_left: number } | null;

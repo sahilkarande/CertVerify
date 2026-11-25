@@ -729,6 +729,18 @@ def cmd_enqueue(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_retry_failed(_: argparse.Namespace) -> int:
+    from app.jobs.queue import retry_failed
+
+    db = _database()
+    with db.session_factory() as session:
+        n = retry_failed(session)
+        session.commit()
+    db.dispose()
+    print(f"queued {n} document(s) whose processing had failed")
+    return 0
+
+
 def cmd_queue_status(_: argparse.Namespace) -> int:
     from app.jobs.queue import processing_health, queue_counts
     from app.models import Job
@@ -751,6 +763,8 @@ def cmd_queue_status(_: argparse.Namespace) -> int:
     )
     if health["stalled"]:
         print("STALLED: no worker is taking " + ", ".join(health["stalled_kinds"]) + " (make run)")
+    if failed:
+        print("to process failed documents again after fixing the cause: make retry-failed")
     if failed:
         print("failed: " + ", ".join(f"{e}={n}" for e, n in failed))
     return 0
@@ -1015,6 +1029,10 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("queue-status", help="Background job counts")
     p.set_defaults(func=cmd_queue_status)
+
+    sub.add_parser(
+        "retry-failed", help="Process again every document whose processing failed"
+    ).set_defaults(func=cmd_retry_failed)
 
     p = sub.add_parser("corrections-report", help="How often verifiers confirm/correct values")
     p.set_defaults(func=cmd_corrections_report)

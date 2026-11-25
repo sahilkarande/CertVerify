@@ -391,3 +391,20 @@ def test_missing_semesters_are_named_as_a_hint() -> None:
     text = _issue_text(issue)
     assert "found 6 for results up to semester 8" in text
     assert "could not spot semester 2 or 5" in text
+
+
+def test_picture_problems_say_exactly_what_to_do() -> None:
+    from app.intake.quality import MESSAGES
+    from app.models import DocumentPage
+    from app.models.enums import QualityVerdict, Readability
+    from app.portal.application import _page_json
+
+    page = DocumentPage(page_number=1, quality_verdict=QualityVerdict.WARN,
+                        detected_type_id=uuid.uuid4(), quality_reasons=["low_resolution"],
+                        readability=Readability.CLEAR, readability_details={},
+                        semesters=[])  # fmt: skip
+    j = _page_json(None, page, {}, {}, identity=False, processing=False)
+    assert j["problems"] == [MESSAGES["low_resolution"]] and j["status"] == "check"
+    assert j["photo_tips"] is True
+    for msg in MESSAGES.values():  # every message says what to do, not just what is wrong
+        assert "take a new" in msg.lower() or "take a clear" in msg.lower()

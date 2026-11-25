@@ -9,6 +9,7 @@ from app.models.ocr import PageOcr
 from app.models.registry import DocumentType, RequirementItem, RequirementSet
 from app.models.review import AuditEvent, ValidationIssue
 from app.models.tenancy import Institution, LoginCode, User, UserSession
+from app.models.testing import TestRun
 
 __all__ = [
     "Applicant",
@@ -29,6 +30,7 @@ __all__ = [
     "RequirementSet",
     "StoredFile",
     "Submission",
+    "TestRun",
     "SubmissionMessage",
     "User",
     "UserSession",

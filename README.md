@@ -324,6 +324,29 @@ Some things are not deleted:
 - **Copies outside the live database:** backups in `backend/data/backups` and the evaluation label files in
   `backend/data/ocr_eval` still contain the data until you remove them.
 
+## Testing Lab (platform admins)
+
+**Testing Lab** in the top bar measures the system on a new batch of real documents before you rely on it.
+
+1. **Create a test run.** Name it, and note what you are testing (e.g. "after switching to Paddle 3.2.2").
+2. **Add test students.** For each one, enter a name (used for the name check), the degree status and an optional
+   claimed %, then choose files for each checklist item, like a student would.
+3. **Let it process.** Uploads go through the real pipeline but wait behind real students. The page refreshes while
+   processing.
+4. **Read the metrics.** Each run is compared with the real applicants (the baseline) or with another run, and the
+   difference is coloured better or worse. The metrics cover processing time, picture quality, how well the text was
+   read, document recognition, values found, and the outcome for students and staff (clear vs needs review, asked to
+   type values, asked for a clearer copy). Each rate shows what it is "of", so small samples are obvious.
+5. **Measure accuracy by reviewing.** Open a test student (it shows a "Test student" badge) and review it like a
+   verifier: ✓ right values, correct wrong ones, add missing ones, fix page types. Accuracy per field and for page
+   types fills in as you go. **Export metrics (CSV)** gives the same table for a spreadsheet.
+
+Test students are kept apart from real ones:
+
+- They never appear in the verifier queue or in the baseline.
+- They are never compared with real students for shared files or IDs.
+- **Delete this test run** (type its name) removes all of a run's students, files and results.
+
 ## Staff accounts and sign-in
 
 Staff sign in with email + password, then a 6-digit code from an authenticator app (Google/Microsoft Authenticator,

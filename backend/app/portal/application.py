@@ -208,8 +208,8 @@ def _confirm_json(p, labels: dict[str, str]) -> dict | None:
 
 # Plain-language notes per page, shown under the page and in the page viewer.
 PAGE_UNREADABLE = (
-    "We could not read the text on this page clearly. Upload a clearer scan or photo: the "
-    "whole page, flat, in good light, filling the picture."
+    "We could not read the text on this page. Take a new, clear picture (see the tips), or "
+    "upload the original PDF or scan."
 )
 PAGE_CONFIRM = "We could not read some details clearly. Type them below, or upload a clearer copy."
 PAGE_UNRECOGNISED = (
@@ -249,6 +249,8 @@ def _page_json(db: Session, p, names: dict, labels: dict, identity: bool, proces
         "semesters": list(p.semesters or []),
         "problems": problems,
         "has_image": p.image_file_id is not None,
+        # Show "how to take a clear picture" when the picture itself is the problem.
+        "photo_tips": bool(p.quality_reasons) or unreadable or confirm is not None,
         "text_unreadable": unreadable,
         "confirm": confirm,
     }

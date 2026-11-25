@@ -20,6 +20,7 @@ KINDS = (PROCESS_DOCUMENT, CHECK_DOCUMENT, READ_DOCUMENT)
 CHECK_PRIORITY = 0
 UPLOAD_PRIORITY = 10  # someone is waiting for it
 BACKFILL_PRIORITY = 100
+TEST_PRIORITY = 200  # Testing Lab batches: only when nothing real is waiting
 # A running job whose lease is not renewed within this time is taken over by another
 # worker (its worker crashed or the machine slept). Renewed at every stage.
 LEASE = timedelta(minutes=10)
@@ -82,8 +83,10 @@ def try_claim(db: Session, job_id: uuid.UUID, worker_id: str) -> bool:
     return bool(won)
 
 
-def enqueue_upload(db: Session, document_id: uuid.UUID) -> Job:
-    return enqueue_document(db, document_id, priority=CHECK_PRIORITY, kind=CHECK_DOCUMENT)
+def enqueue_upload(db: Session, document_id: uuid.UUID, *, test: bool = False) -> Job:
+    """A test upload (Testing Lab) waits behind every real one."""
+    priority = TEST_PRIORITY if test else CHECK_PRIORITY
+    return enqueue_document(db, document_id, priority=priority, kind=CHECK_DOCUMENT)
 
 
 def claim(db: Session, worker_id: str, kinds: tuple[str, ...] = KINDS) -> Job | None:
@@ -209,3 +212,27 @@ def processing_health(db: Session) -> dict:
         "stalled": bool(stalled_kinds),
         "stalled_kinds": stalled_kinds,
     }
+
+
+def failed_documents(db: Session, document_ids=None) -> list[uuid.UUID]:
+    """Documents whose latest job gave up (after its retries)."""
+    from app.models import Document
+
+    q = select(Document.id)
+    if document_ids is not None:
+        q = q.where(Document.id.in_(list(document_ids)))
+    return [d for d in db.scalars(q) if (j := latest_job(db, d)) and j.status == JobStatus.FAILED]
+
+
+def retry_failed(db: Session, document_ids=None) -> int:
+    """Queue every given document whose processing failed for a fresh, complete run (after a
+    fix, e.g. a worker restarted on new code). Test uploads keep their low priority."""
+    from app.models import Document, Submission
+
+    ids = failed_documents(db, document_ids)
+    for doc_id in ids:
+        doc = db.get(Document, doc_id)
+        test = db.get(Submission, doc.submission_id).test_run_id is not None
+        enqueue_document(db, doc_id, priority=TEST_PRIORITY if test else UPLOAD_PRIORITY)
+    db.flush()
+    return len(ids)

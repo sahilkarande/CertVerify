@@ -39,17 +39,21 @@ class Thresholds:
 
 DOCUMENT = Thresholds()
 
-# Student-facing messages, keyed by reason code.
+# Student-facing messages, keyed by reason code: what is wrong, then exactly what to do.
 MESSAGES = {
-    "blank": "This page appears to be blank.",
-    "low_resolution_severe": "The image resolution is too low to read. Please upload a clearer "
-    "scan or a photo taken closer to the document.",
-    "low_resolution": "The image resolution is low; some details may be hard to read.",
-    "blurry_severe": "The image is too blurry to read. Please retake the photo with the document "
-    "in focus and the camera held steady.",
-    "blurry": "The image is slightly blurry.",
-    "low_contrast": "The image is faded or has low contrast. Please use better lighting.",
-    "too_small": "The image is too small. Please upload a larger image.",
+    "blank": "This page looks blank. If it is not, take a new picture with the whole page in view.",
+    "low_resolution_severe": "This picture is too small to read. Take a new, clear picture "
+    "with the page filling the screen, or upload the original PDF or scan.",
+    "low_resolution": "This picture is small, so some text may not be read correctly. Take a "
+    "clear picture with the page filling the screen, or upload the original PDF or scan.",
+    "blurry_severe": "This picture is too blurry to read. Take a new picture: hold the phone "
+    "steady and tap the page on the screen to focus before you take it.",
+    "blurry": "This picture is a little blurry. Take a new picture: hold the phone steady and "
+    "tap the page on the screen to focus before you take it.",
+    "low_contrast": "This picture is faded or too dark. Take a new picture in good light, with "
+    "no shadow or glare on the page.",
+    "too_small": "This picture is too small to read. Take a new, clear picture with the page "
+    "filling the screen, or upload the original PDF or scan.",
 }
 
 
