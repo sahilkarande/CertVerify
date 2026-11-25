@@ -74,6 +74,51 @@ def test_find_semesters(header: str, sems: list[int]) -> None:
     assert find_semesters(header) == sems
 
 
+def _sheet(*sections: list[str], footer: list[str] = ()) -> list:
+    """A year statement: a title, then each semester's heading and marks table."""
+    lines = ["NORTH MAHARASHTRA UNIVERSITY", "STATEMENT OF GRADES", "T.E. EXAMINATION MAY 2023"]
+    for s in sections:
+        lines += s + FILLER
+    return words_for(lines + list(footer))
+
+
+def _semesters(words: list) -> list[int]:
+    text = " ".join(w[0] for w in words)
+    return find_semesters(header_text(words), text.upper(), words)
+
+
+def test_both_semesters_of_a_year_statement_are_found() -> None:
+    # "SEM VI" heads the second table, below the header the title is read from.
+    words = _sheet(["SEM V"], ["SEM VI"], footer=["SGPA: SEM I:9.44 SEM II:9.47 SEM V:6.52"])
+    assert _semesters(words) == [5, 6]
+
+
+def test_a_summary_of_earlier_semesters_is_not_a_section() -> None:
+    # One semester's sheet ending in a grid of earlier results (Sem I / Sem II cells).
+    words = _sheet(["SEMESTER : I"], footer=["SEM I CREDITS 22", "SEM I", "SEM II"])
+    assert _semesters(words) == [1]
+    row = _sheet(["SEMESTER : III"], footer=["SEM I", "SEM II"])
+    for w in row:  # the two summary cells on one row
+        if w[0] == "II" or (w[0] == "SEM" and w[3] == row[-1][3]):
+            w[3] = row[-2][3]
+    assert _semesters(row) == [3]
+    # A lone "SEM IV" cell beside "SEM III: 8.75" on the summary row is not a section.
+    cells = _sheet(["SEMESTER : III"], footer=["SEM IV", "SEM III: 8.75"])
+    last = cells[-1][3]
+    for w in cells:
+        if w[3] == last - 40:
+            w[3] = last
+    assert _semesters(cells) == [3]
+
+
+def test_a_semester_outside_the_named_year_is_a_misread() -> None:
+    # "Sem : III" read as "1" on a second-year sheet: unknown, not semester 1.
+    assert find_semesters("PROGRAMME B.TECH (SECOND YEAR) SEM : 1 ROLL NO") == []
+    assert find_semesters("PROGRAMME B.TECH (SECOND YEAR) SEM : III ROLL NO") == [3]
+    # The course's length is not the year being studied.
+    assert find_semesters("THIRD SEMESTER EXAMINATION FOURTH YEAR DEGREE COURSE") == [3]
+
+
 def test_compact_and_best_ratio_tolerate_ocr_damage() -> None:
     assert compact("Edu cation, 10 + 2!") == "EDUCATION10+2"
     damaged = compact("ONDARY SCHOO! CERTIFICATE EXAMINATION")

@@ -164,7 +164,60 @@ def to_semester(token: str) -> int | None:
     return ROMAN.get(re.sub(r"[L1|]", "I", token))
 
 
-def find_semesters(header: str, full: str = "") -> list[int]:
+# A year statement can head each semester's table with just "SEM VI" / "Semester-V" on its own
+# line, the second one half-way down the page, outside the header.
+_SECTION = re.compile(rf"^\W*SEM(?:ESTER)?\s*[:.\-]*\s*\(?{_NUM}\W*$")
+_MENTION = re.compile(rf"SEM(?:ESTER)?\s*[:.\-]*\s*\(?{_NUM}\b")
+SUMMARY_ROW = 0.015  # share of page height: cells of one table row
+SECTION_GAP = 0.1  # two sections are a whole marks table apart; a summary grid is not
+
+
+def section_semesters(words: list) -> list[int]:
+    """Semesters from stand-alone section headings anywhere on the page. Summary tables at
+    the bottom ("SEM I: 9.44 SEM II: 9.47", or a grid of Sem I / Sem II cells) also name
+    semesters, so cells sharing a row with another mention, and headings too close
+    together, do not count."""
+    if not words:
+        return []
+    ys = [w[3] for w in words]
+    low, span = min(ys), (max(ys) - min(ys)) or 1
+    rows: dict = {}
+    for w in words:
+        rows.setdefault(w[6], []).append(w)
+    lines = [((ws[0][3] - low) / span, norm(" ".join(x[0] for x in sorted(ws, key=lambda w: w[2]))))
+             for ws in rows.values()]  # fmt: skip
+    mentions = [y for y, text in lines if _MENTION.search(text)]
+    found: list[tuple[int, float]] = []
+    for y, text in lines:
+        m = _SECTION.match(text)
+        alone = m and sum(abs(y - o) < SUMMARY_ROW for o in mentions) <= 1
+        if alone and (value := to_semester(m.group(1))):
+            found.append((value, y))
+    # Headings stacked close together are a summary grid, not sections.
+    spaced = [(v, y) for v, y in found if all(abs(y - y2) >= SECTION_GAP
+                                              for _, y2 in found if y2 != y)]  # fmt: skip
+    values = sorted({v for v, _ in spaced})
+    return values if len(values) == 2 else []
+
+
+# "Programme: B.Tech (Second Year)" names the year being studied. "Fourth Year Degree Course"
+# is the course's length, not the year.
+STUDY_YEAR = re.compile(
+    r"\b(FIRST|SECOND|THIRD|FOURTH|FINAL)\s*YEAR\b(?!\W*(?:DEGREE|COURSE|PROGRAM))"
+)
+
+
+def _fits_year(header: str, semesters: list[int]) -> list[int]:
+    """Semesters outside the year the header names are misread numerals ("Sem : III" read as
+    "1" on a second-year sheet): they are dropped rather than trusted."""
+    years = {YEAR_SGPA_FIRST_SEMESTER[y] for y in STUDY_YEAR.findall(header)}
+    if len(years) != 1:
+        return semesters
+    first = years.pop()
+    return [n for n in semesters if n in (first, first + 1)]
+
+
+def find_semesters(header: str, full: str = "", words: list | None = None) -> list[int]:
     year = YEAR_STATEMENT.search(header)
     if year:
         first = YEAR_FIRST_SEMESTER[year.group(1)]
@@ -179,7 +232,11 @@ def find_semesters(header: str, full: str = "") -> list[int]:
             value = to_semester(m.group(1))
             if value and value not in found:
                 found.append(value)
-    return sorted(found)[:2]
+    sections = section_semesters(words or [])
+    # Both halves of a year statement: the header names (at most) one of them.
+    if sections and (not found or (len(found) == 1 and found[0] in sections)):
+        return _fits_year(header, sections)
+    return _fits_year(header, sorted(found)[:2])
 
 
 # "High School" is the 10th-grade exam on several boards (MP, UP), whose sheets also print
@@ -213,7 +270,7 @@ def classification_for(
     level = AcademicLevel.SCHOOL if code in (SSC, HSC, DIPLOMA) else None
     if code in (SEMESTER, PROVISIONAL, DEGREE):
         level = AcademicLevel.PG if _first(full, PG_PATTERNS) else AcademicLevel.UG
-    sems = find_semesters(header_text(words), full) if code in (SEMESTER, DIPLOMA) else []
+    sems = find_semesters(header_text(words), full, words) if code in (SEMESTER, DIPLOMA) else []
     return Classification(
         type_code=code, confidence=confidence, semesters=sems, level=level, evidence=evidence
     )
@@ -229,7 +286,7 @@ def classify_text(text: str, words: list) -> Classification:
         level = AcademicLevel.SCHOOL if code in (SSC, HSC, DIPLOMA) else None
         if code in (SEMESTER, PROVISIONAL, DEGREE):
             level = AcademicLevel.PG if _first(full, PG_PATTERNS) else AcademicLevel.UG
-        sems = find_semesters(header, full) if code in (SEMESTER, DIPLOMA) else []
+        sems = find_semesters(header, full, words) if code in (SEMESTER, DIPLOMA) else []
         return Classification(
             type_code=code,
             fuzzy=fuzzy,

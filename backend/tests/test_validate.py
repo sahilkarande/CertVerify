@@ -217,6 +217,28 @@ def test_name_judged_per_document_and_middle_name_optional() -> None:
     assert issue.severity is IssueSeverity.ERROR and issue.details["printed_name"] == "RAHUL VERMA"
 
 
+def test_name_with_an_initial_for_the_surname_matches() -> None:
+    c = ctx(doc("ssc", page("ssc_marksheet", candidate_name="ASHA RAMESH P")))
+    assert name_matches_form(c) == []
+    wrong_initial = ctx(doc("ssc", page("ssc_marksheet", candidate_name="ASHA RAMESH K")))
+    assert codes(name_matches_form(wrong_initial)) == [
+        ("name_partial_match", IssueSeverity.WARNING)
+    ]
+
+
+def test_one_issue_for_the_same_printed_name_on_several_documents() -> None:
+    maiden = "KULKARNI ASHA SURESH"
+    c = ctx(
+        doc("ssc", page("ssc_marksheet", candidate_name=maiden)),
+        doc("hsc", page("hsc_marksheet", candidate_name=maiden)),
+        doc("sem", page(SEM, candidate_name="ASHA PATIL")),
+        requirements=[item("ssc", ["ssc_marksheet"]), item("hsc", ["hsc_marksheet"], label="12th")],
+    )
+    [issue] = name_matches_form(c)
+    assert issue.details["also_on"] == ["12th"]
+    assert "name before marriage" in issue.message
+
+
 # ---------- marks ----------
 
 
@@ -256,6 +278,25 @@ def test_claimed_percentage_against_cgpa_conversions(claimed, expected) -> None:
 def test_claimed_percentage_ignores_an_earlier_semesters_cgpa() -> None:
     c = ctx(
         doc("sem", page(SEM, [4], cgpa="6.0"), page(SEM, [7, 8])), claimed_aggregate_percent=85.0
+    )
+    assert codes(claimed_percentage(c)) == [("claimed_percentage_unverified", IssueSeverity.INFO)]
+
+
+def test_claimed_percentage_printed_on_a_marksheet_settles_it() -> None:
+    # A master's after a bachelor's: the first degree's CGPA is not the claimed aggregate.
+    c = ctx(
+        doc("degree", page(DEG, cgpa="7.4")),
+        doc("sem", page(SEM, [4], cgpa="9.38", percentage="79.58")),
+        claimed_aggregate_percent=79.58,
+    )
+    assert claimed_percentage(c) == []
+
+
+def test_claimed_percentage_unverified_when_the_latest_semester_is_unknown() -> None:
+    # Later sheets unreadable: semester 4 only looks like the last one.
+    c = ctx(
+        doc("sem", page(SEM, [4], cgpa="7.48"), page(SEM, [], cgpa="7.3")),
+        claimed_aggregate_percent=78.0,
     )
     assert codes(claimed_percentage(c)) == [("claimed_percentage_unverified", IssueSeverity.INFO)]
 

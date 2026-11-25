@@ -211,7 +211,8 @@ def name_matches_form(ctx: SubmissionContext) -> list[IssueDraft]:
     """The applicant's name must appear on each academic document. Judged per document:
     one page with the full name is enough (back sides and continuation pages often carry no
     name, and a misread name on one page of an 8-page PDF is not a mismatch)."""
-    out = []
+    out: list[IssueDraft] = []
+    raised: dict[str, IssueDraft] = {}  # printed name -> its issue
     for d in ctx.documents:
         readings = []
         for p in d.pages:
@@ -224,19 +225,53 @@ def name_matches_form(ctx: SubmissionContext) -> list[IssueDraft]:
         if not readings:
             continue
         share, matched, total, p, printed = max(readings, key=lambda r: r[0])
-        if share == 1 or any(_first_and_surname(ctx.applicant_name, r[4]) for r in readings):
+        if share == 1 or any(
+            _first_and_surname(ctx.applicant_name, r[4])
+            or _initials_complete(ctx.applicant_name, r[4])
+            for r in readings
+        ):
+            continue  # fmt: skip
+        # The same printed name on several documents is one fact for the reviewer to judge.
+        key = " ".join(sorted(match_form_name(printed, ctx.applicant_name)[0].split()))
+        if key in raised:
+            labels = {i.key: i.label for i in ctx.requirements}
+            raised[key].details.setdefault("also_on", []).append(labels.get(d.slot, d.slot))
             continue
         mismatch = matched == 0
-        out.append(IssueDraft(
+        first_only = not mismatch and _first_name_only(ctx.applicant_name, printed)
+        message = (
+            "The name on this document does not match the application." if mismatch else
+            "Only the first name matches the application: possibly a name before marriage; "
+            "check for a name-change document." if first_only else
+            "The name on this document only partly matches the application."
+        )  # fmt: skip
+        raised[key] = IssueDraft(
             "name_mismatch" if mismatch else "name_partial_match",
-            ERROR if mismatch else WARNING,
-            "The name on this document does not match the application."
-            if mismatch else "The name on this document only partly matches the application.",
-            f"name:{d.id}", d.id,
+            ERROR if mismatch else WARNING, message, f"name:{d.id}", d.id,
             {"page": p.number, "printed_name": printed,
              "form_words_matched": f"{matched}/{total}"},
-        ))  # fmt: skip
+        )  # fmt: skip
+        out.append(raised[key])
     return out
+
+
+def _initials_complete(form_name: str, printed: str) -> bool:
+    """Every form word is on the document, some only as an initial ("ASHWIN KUMAR
+    PANDURANG J" for "... Jonjale")."""
+    form = form_name.upper().split()
+    fixed, matched, _ = match_form_name(printed, form_name)
+    words = fixed.split()
+    missing = [w for w in form if w not in words]
+    initials = [w for w in words if len(w) == 1]
+    if not missing or matched + len(missing) != len(form) or len(missing) > len(initials):
+        return False
+    return all(any(i == w[0] for i in initials) for w in missing)
+
+
+def _first_name_only(form_name: str, printed: str) -> bool:
+    form = form_name.upper().split()
+    words = set(match_form_name(printed, form_name)[0].split())
+    return len(form) >= 2 and form[0] in words and form[-1] not in words
 
 
 def _name_unsettled(p: PageInfo) -> bool:
@@ -302,7 +337,11 @@ def final_cgpa(ctx: SubmissionContext) -> tuple[float, str] | None:
     for p in ctx.pages(*DEGREE_DOCS):
         if v := p.get("cgpa", 0.75):
             return float(v), p.type_code
-    sems = [p for p in ctx.pages("semester_marksheet") if p.get("cgpa", 0.75) and p.semesters]
+    all_sems = ctx.pages("semester_marksheet")
+    sems = [p for p in all_sems if p.get("cgpa", 0.75) and p.semesters]
+    # A CGPA on a page whose semester could not be read may be the latest one.
+    if any(p.get("cgpa", 0.75) and not p.semesters for p in all_sems):
+        return None
     if sems:
         last = max(sems, key=lambda p: max(p.semesters))
         highest = max(n for p in ctx.pages("semester_marksheet") for n in p.semesters)
@@ -312,12 +351,24 @@ def final_cgpa(ctx: SubmissionContext) -> tuple[float, str] | None:
     return None
 
 
+def _number(value: str | None) -> float | None:
+    try:
+        return float(value) if value else None
+    except ValueError:
+        return None
+
+
 @rule
 def claimed_percentage(ctx: SubmissionContext) -> list[IssueDraft]:
     claimed = ctx.attributes.get("claimed_aggregate_percent")
     if claimed is None:
         return []
-    pcts = [float(v) for p in ctx.pages(*DEGREE_DOCS) if (v := p.get("percentage", 0.75))]
+    # The exact figure printed on a marksheet (aggregate or final-year percentage) settles it.
+    printed = [float(v) for p in ctx.pages("semester_marksheet", *DEGREE_DOCS)
+               if (v := _number(p.get("percentage", 0.75)))]  # fmt: skip
+    if any(abs(v - claimed) <= PERCENT_TOLERANCE for v in printed):
+        return []
+    pcts = [float(v) for p in ctx.pages(*DEGREE_DOCS) if (v := _number(p.get("percentage", 0.75)))]
     if pcts:
         if any(abs(v - claimed) <= PERCENT_TOLERANCE for v in pcts):
             return []
