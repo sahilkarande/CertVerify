@@ -7,14 +7,15 @@ Human corrections and values the student confirmed are never touched: re-running
 machine rows only.
 """
 
-from collections import Counter
+import uuid
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.extract.fields import Candidate, extract_page
-from app.models import Document, DocumentPage, DocumentType, ExtractedField
+from app.models import Document, DocumentPage, DocumentType, ExtractedField, StoredFile, Submission
 from app.models.enums import DocumentCategory, FieldSource
 from app.ocr.pipeline import preferred_readings
 
@@ -92,6 +93,52 @@ def extract_page_fields(db: Session, page: DocumentPage) -> PageExtraction:
         result.stored.append(key)
     db.flush()
     return result
+
+
+# ---------- identifiers confirmed by another page ----------
+
+ID_KEYS = ("seat_number", "student_id")
+# An ID read identically from two different page images (a PRN or enrolment number repeats
+# on every semester sheet) is very unlikely to be a misread: on the labelled pages, 26 of 26
+# such values were right, against 20 of 21 for values read beside their label.
+CORROBORATED = 0.95
+
+
+def corroborate_ids(db: Session, applicant_id: uuid.UUID) -> int:
+    """Recompute, from scratch, which of the applicant's machine-read IDs another page
+    confirms. The extractor's own confidence is kept in ``bbox["base_confidence"]`` so this can
+    be undone (a file deleted, a page re-read). Returns how many fields are confirmed. Caller
+    commits."""
+    rows = db.execute(
+        select(ExtractedField, StoredFile.sha256)
+        .join(DocumentPage, DocumentPage.id == ExtractedField.page_id)
+        .join(StoredFile, StoredFile.id == DocumentPage.image_file_id)
+        .join(Document, Document.id == ExtractedField.document_id)
+        .join(Submission, Submission.id == Document.submission_id)
+        .where(
+            Submission.applicant_id == applicant_id,
+            ExtractedField.field_key.in_(ID_KEYS),
+            ExtractedField.source == FieldSource.MACHINE,
+        )
+    ).all()
+    images: dict[str, set[str]] = defaultdict(set)  # value -> page images it was read from
+    for f, sha in rows:
+        if f.machine_value:
+            images[f.machine_value.upper()].add(sha)
+    confirmed = 0
+    for f, _ in rows:
+        box = dict(f.bbox or {})
+        base = box.get("base_confidence", f.confidence)
+        if f.machine_value and len(images[f.machine_value.upper()]) >= 2:
+            box["base_confidence"] = base
+            f.confidence = max(base or 0, CORROBORATED)
+            confirmed += 1
+        else:
+            box.pop("base_confidence", None)
+            f.confidence = base
+        f.bbox = box or None
+    db.flush()
+    return confirmed
 
 
 def pages_needing_extraction(db: Session, *, force: bool = False) -> list:

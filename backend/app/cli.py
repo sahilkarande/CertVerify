@@ -413,8 +413,12 @@ def cmd_classification_report(_: argparse.Namespace) -> int:
 def cmd_extract(args: argparse.Namespace) -> int:
     import time
 
-    from app.extract.pipeline import extract_page_fields, pages_needing_extraction
-    from app.models import DocumentPage
+    from app.extract.pipeline import (
+        corroborate_ids,
+        extract_page_fields,
+        pages_needing_extraction,
+    )
+    from app.models import Document, DocumentPage, Submission
 
     db = _database()
     missing: Counter = Counter()
@@ -429,9 +433,19 @@ def cmd_extract(args: argparse.Namespace) -> int:
             if n % 100 == 0 or n == len(ids):
                 session.commit()
                 print(f"  {n}/{len(ids)} pages", flush=True)
+        # Every applicant, not only those re-read: cheap, and brings older data up to date.
+        applicants = set(
+            session.scalars(
+                select(Submission.applicant_id).join(
+                    Document, Document.submission_id == Submission.id
+                )
+            )
+        )
+        confirmed = sum(corroborate_ids(session, a) for a in applicants)
         session.commit()
     db.dispose()
     print(f"extracted: {len(ids)} pages, {stored} fields in {time.perf_counter() - started:.0f}s")
+    print(f"IDs confirmed by another page: {confirmed}")
     print(
         "required fields not found: "
         + (", ".join(f"{k}={v}" for k, v in missing.most_common()) or "none")

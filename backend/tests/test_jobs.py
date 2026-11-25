@@ -252,6 +252,29 @@ def test_worker_runs_every_step_for_a_document(
     assert _worker(database, storage).run_once() is False  # queue empty
 
 
+def test_an_id_read_again_on_another_document_is_confirmed(
+    session: Session, database: Database, storage
+) -> None:
+    from app.extract.pipeline import CORROBORATED
+    from app.services.files import store_file
+
+    first = _doc(session, storage)
+    f = store_file(session, storage, jpeg(w=1250), mime_type="image/jpeg")  # another photo
+    second = Document(submission_id=first.submission_id, file_id=f.id, slot_key="degree")
+    session.add(second)
+    session.commit()
+    seat = select(ExtractedField.confidence).where(ExtractedField.field_key == "seat_number")
+    enqueue_document(session, first.id)
+    session.commit()
+    _worker(database, storage, ScriptedOcr("paddle")).run_once()
+    assert list(session.scalars(seat)) == [0.9]  # read once: as sure as its label makes it
+    enqueue_document(session, second.id)
+    session.commit()
+    _worker(database, storage, ScriptedOcr("paddle")).run_once()
+    session.expire_all()
+    assert list(session.scalars(seat)) == [CORROBORATED, CORROBORATED]
+
+
 def test_unsure_orientation_falls_back_to_the_rotation_search(
     session: Session, database: Database, storage
 ) -> None:

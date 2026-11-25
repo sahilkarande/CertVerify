@@ -10,7 +10,15 @@ from sqlalchemy.orm import Session
 from app.classify.pipeline import classify_document, phrase_rules, type_id_map
 from app.learn.registry import activate, active_page_type_model, train_page_type
 from app.learn.textclf import PageTypeModel, tokens, train
-from app.models import AuditEvent, Document, DocumentPage, DocumentType, MlModel, PageOcr
+from app.models import (
+    AuditEvent,
+    Document,
+    DocumentPage,
+    DocumentType,
+    ExtractedField,
+    MlModel,
+    PageOcr,
+)
 from app.models.enums import ClassificationMethod, OcrStatus, UserRole
 from app.seeds.document_types import seed_document_types
 from tests.auth_helpers import CSRF, make_user, sign_in
@@ -334,6 +342,34 @@ def test_verifier_sets_a_page_type(client: TestClient, session: Session) -> None
         == 422
     )
     assert MlModel  # registry model imported for completeness
+
+
+def test_a_retyped_page_confirms_an_id_read_elsewhere(client: TestClient, session: Session) -> None:
+    from app.extract.pipeline import CORROBORATED
+
+    seed_document_types(session)
+    sub = make_submission(session)
+    doc = Document(submission_id=sub.id, file_id=make_stored_file(session).id, slot_key="ssc")
+    session.add(doc)
+    session.flush()
+    pages = [_page(session, doc, n, "SEAT NO : B190244471 statement of grades") for n in (1, 2)]
+    for n, page in enumerate(pages):
+        page.image_file_id = make_stored_file(session, sha=str(n + 1) * 64).id
+    seen = "B190244471"
+    session.add(ExtractedField(document_id=doc.id, page_id=pages[0].id, field_key="seat_number",
+                               machine_value=seen, value=seen, confidence=0.9))  # fmt: skip
+    session.commit()
+    make_user(session, "v@c.test", institution_id=sub.applicant.institution_id)
+    sign_in(client, "v@c.test")
+    r = client.post(
+        f"/api/v1/review/pages/{pages[1].id}/type",
+        json={"type": "semester_marksheet"},
+        headers=CSRF,
+    )
+    assert r.status_code == 200
+    session.expire_all()
+    seat = select(ExtractedField.confidence).where(ExtractedField.field_key == "seat_number")
+    assert list(session.scalars(seat)) == [CORROBORATED, CORROBORATED]
 
 
 def test_model_cap_is_below_the_review_threshold() -> None:

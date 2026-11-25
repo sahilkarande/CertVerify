@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.classify.pipeline import classify_document, load_model, phrase_rules, type_id_map
-from app.extract.pipeline import extract_page_fields
+from app.extract.pipeline import corroborate_ids, extract_page_fields
 from app.extract.readability import assess_page
 from app.intake.pipeline import is_identity_slot, process_document
 from app.jobs.queue import (
@@ -105,6 +105,7 @@ def read_document(
             db, storage, engines.rotation, page
         ):
             assess_page(db, page)  # the other engine may agree with the doubted values
+    corroborate_ids(db, doc.submission.applicant_id)  # IDs repeated on the student's other pages
     db.commit()
 
     progress(db, job, JobStage.VALIDATING)

@@ -106,6 +106,9 @@ def delete_application(db: Session, sub: Submission, actor: User) -> Erasure:
     _delete_submission(db, sub, out)
     db.expire_all()
     out.collect_unused_files(db)
+    from app.extract.pipeline import corroborate_ids
+
+    corroborate_ids(db, applicant.id)  # their other applications' IDs lose this confirmation
     record_event(
         db,
         action="application.deleted",

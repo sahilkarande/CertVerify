@@ -12,6 +12,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.extract.pipeline import corroborate_ids
 from app.jobs.queue import enqueue_upload
 from app.models import Document, RequirementItem, StoredFile, Submission
 from app.models.enums import DocumentStatus
@@ -113,6 +114,7 @@ def remove_document(
     """Delete a document, its derived page images and (if nothing else uses it) the original
     file, from the database and from storage. Caller commits."""
     file_ids = [doc.file_id] + [p.image_file_id for p in doc.pages if p.image_file_id]
+    applicant_id = doc.submission.applicant_id
     record_event(
         db,
         action="document.removed",
@@ -132,3 +134,4 @@ def remove_document(
             db.delete(f)
             db.flush()
             storage.delete(key)
+    corroborate_ids(db, applicant_id)  # IDs this file confirmed are no longer confirmed
