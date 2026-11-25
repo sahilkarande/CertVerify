@@ -52,3 +52,13 @@ class TimestampMixin:
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+def iso_utc(dt: datetime | None) -> str | None:
+    """ISO 8601 with an explicit UTC offset. SQLite returns stored times without a zone;
+    without the offset a browser would read them as local time."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.isoformat()

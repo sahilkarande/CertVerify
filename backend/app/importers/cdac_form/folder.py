@@ -67,6 +67,7 @@ class ApplyReport:
     files_stored: int = 0
     files_already_present: int = 0
     drive_refs_linked: int = 0
+    drive_refs_relinked: int = 0
     by_mime: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     warnings: list[str] = field(default_factory=list)
 
@@ -328,6 +329,7 @@ def apply_import(
             raise
         report.students += 1
 
+    report.drive_refs_relinked = relink_fetched_refs(db, rs.id)
     record_event(
         db,
         action="import.folder",
@@ -339,6 +341,7 @@ def apply_import(
             "files_stored": report.files_stored,
             "files_already_present": report.files_already_present,
             "drive_refs_linked": report.drive_refs_linked,
+            "drive_refs_relinked": report.drive_refs_relinked,
         },
     )
     db.commit()
@@ -367,3 +370,32 @@ def _link_drive_ref(db: Session, submission_id, slot_key: str, new_docs: list[Do
     ref.last_error = None
     ref.fetched_at = utcnow()
     return 1
+
+
+def relink_fetched_refs(db: Session, requirement_set_id) -> int:
+    """Restore the link from a fetched Drive ref to its document where it is missing.
+
+    The link is unambiguous when the ref's submission has exactly one document in that slot.
+    (A SQLite batch migration once cleared these links; see migrations/env.py.)
+    """
+    refs = db.scalars(
+        select(ImportFileRef)
+        .join(Submission, Submission.id == ImportFileRef.submission_id)
+        .where(
+            Submission.requirement_set_id == requirement_set_id,
+            ImportFileRef.status == ImportFileStatus.FETCHED,
+            ImportFileRef.document_id.is_(None),
+        )
+    ).all()
+    fixed = 0
+    for ref in refs:
+        docs = db.scalars(
+            select(Document.id).where(
+                Document.submission_id == ref.submission_id, Document.slot_key == ref.slot_key
+            )
+        ).all()
+        if len(docs) == 1:
+            ref.document_id = docs[0]
+            fixed += 1
+    db.flush()
+    return fixed

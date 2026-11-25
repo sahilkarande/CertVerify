@@ -22,7 +22,7 @@ from app.services.files import read_file
 from app.services.filetypes import sniff_mime
 from app.services.names import normalize_name
 from app.storage import EncryptedLocalStorage
-from tests.cdac_fixtures import make_row, write_csv
+from tests.cdac_fixtures import KEY, make_row, write_csv
 
 JPEG = b"\xff\xd8\xff\xe0" + b"jpeg-body"
 PNG = b"\x89PNG\r\n\x1a\n" + b"png-body"
@@ -59,7 +59,7 @@ def make_export(root: Path, students=STUDENTS) -> Path:
 @pytest.fixture
 def imported_form(session: Session, tmp_path: Path) -> None:
     rows = [make_row(no, c2=name, c7=email) for no, name, email, _ in STUDENTS]
-    import_form(session, parse_csv(write_csv(tmp_path / "f.csv", rows)))
+    import_form(session, parse_csv(write_csv(tmp_path / "f.csv", rows)), erasure_key=KEY)
     session.commit()
 
 
@@ -242,3 +242,20 @@ def test_failed_student_leaves_no_partial_data(
     monkeypatch.setattr(folder_mod, "_link_drive_ref", real_link)
     report = apply_import(session, storage, scanned, mapping)  # resume
     assert (report.files_stored, report.files_already_present) == (21, 7)
+
+
+def test_rerun_relinks_refs_that_lost_their_document(
+    session: Session, storage: EncryptedLocalStorage, tmp_path: Path, imported_form: None
+) -> None:
+    scanned = scan_folder(make_export(tmp_path / "e"))
+    mapping = confirmed_mapping(session, scanned, tmp_path / "m.csv")
+    apply_import(session, storage, scanned, mapping)
+    for ref in session.scalars(select(ImportFileRef)):
+        ref.document_id = None  # what the faulty SQLite migration did
+    session.commit()
+
+    report = apply_import(session, storage, scanned, mapping)
+    assert report.drive_refs_relinked == 28
+    refs = session.scalars(select(ImportFileRef)).all()
+    assert all(r.document_id is not None for r in refs)
+    assert apply_import(session, storage, scanned, mapping).drive_refs_relinked == 0

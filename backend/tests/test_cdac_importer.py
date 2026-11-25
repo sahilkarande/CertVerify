@@ -7,7 +7,7 @@ from app.importers.cdac_form.importer import import_form
 from app.importers.cdac_form.parser import parse_csv
 from app.models import Applicant, AuditEvent, ImportFileRef, RequirementSet, Submission
 from app.models.enums import ImportFileStatus, SubmissionStatus
-from tests.cdac_fixtures import make_row, write_csv
+from tests.cdac_fixtures import KEY, make_row, write_csv
 
 
 def count(db: Session, model) -> int:
@@ -18,7 +18,7 @@ def test_import_creates_records(session: Session, tmp_path: Path) -> None:
     parsed = parse_csv(
         write_csv(tmp_path / "f.csv", [make_row("100000001"), make_row("100000002")])
     )
-    report = import_form(session, parsed)
+    report = import_form(session, parsed, erasure_key=KEY)
     session.commit()
 
     assert (report.applicants_created, report.file_refs_created) == (2, 14)
@@ -43,11 +43,15 @@ def test_import_creates_records(session: Session, tmp_path: Path) -> None:
 
 
 def test_reimport_is_idempotent_and_updates(session: Session, tmp_path: Path) -> None:
-    import_form(session, parse_csv(write_csv(tmp_path / "a.csv", [make_row("100000001")])))
+    import_form(
+        session, parse_csv(write_csv(tmp_path / "a.csv", [make_row("100000001")])), erasure_key=KEY
+    )
     session.commit()
 
     changed = make_row("100000001", c2="Corrected Name", c21="76.5")
-    report = import_form(session, parse_csv(write_csv(tmp_path / "b.csv", [changed])))
+    report = import_form(
+        session, parse_csv(write_csv(tmp_path / "b.csv", [changed])), erasure_key=KEY
+    )
     session.commit()
 
     assert (report.applicants_created, report.applicants_updated) == (0, 1)
@@ -64,6 +68,6 @@ def test_reimport_is_idempotent_and_updates(session: Session, tmp_path: Path) ->
 def test_same_drive_file_in_two_students_is_flagged(session: Session, tmp_path: Path) -> None:
     shared = "https://drive.google.com/open?id=SHAREDFILE123"
     rows = [make_row("100000001", c11=shared), make_row("100000002", c11=shared)]
-    report = import_form(session, parse_csv(write_csv(tmp_path / "f.csv", rows)))
+    report = import_form(session, parse_csv(write_csv(tmp_path / "f.csv", rows)), erasure_key=KEY)
     assert report.file_refs_created == 13
     assert any("already linked to another submission" in w for w in report.warnings)

@@ -27,10 +27,24 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+class ForeignKeyViolation(RuntimeError):
+    pass
+
+
 def run_migrations_online() -> None:
     # build_engine also creates the SQLite parent directory if needed.
     engine = build_engine(config.get_main_option("sqlalchemy.url"))
+    is_sqlite = engine.dialect.name == "sqlite"
     with engine.connect() as connection:
+        if is_sqlite:
+            # SQLite batch migrations rebuild a table by copying it, dropping the original and
+            # renaming the copy. With foreign keys enforced, that DROP fires ON DELETE CASCADE /
+            # SET NULL on every child row (this once emptied page_ocr). Disable enforcement for
+            # the migration (must happen outside a transaction) and verify integrity afterwards.
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            # SQLAlchemy 2.0 auto-begins a transaction on the first statement; end it, or
+            # Alembic would join it and the whole migration would be rolled back on close.
+            connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
@@ -40,6 +54,12 @@ def run_migrations_online() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
+        if is_sqlite:
+            problems = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
+            if problems:
+                raise ForeignKeyViolation(f"Foreign key violations after migration: {problems[:5]}")
     engine.dispose()
 
 

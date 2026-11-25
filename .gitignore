@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+.paddle-venv/
 .pytest_cache/
 .ruff_cache/
 
@@ -22,8 +23,10 @@ Data/
 # Node (frontend, later phases)
 node_modules/
 dist/
+*.tsbuildinfo
 
-# Editors / OS
+# Editors / OS / local tooling
+.claude/
 .vscode/
 .idea/
 .DS_Store

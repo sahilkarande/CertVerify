@@ -1,25 +1,38 @@
 """All ORM models. Importing this package registers every table on Base.metadata."""
 
-from app.models.applicants import Applicant, Submission
+from app.models.applicants import Applicant, ErasedApplicant, Submission, SubmissionMessage
 from app.models.documents import Document, DocumentPage, ExtractedField, StoredFile
 from app.models.imports import ImportFileRef
+from app.models.jobs import Job, WorkerHeartbeat
+from app.models.learning import MlModel
+from app.models.ocr import PageOcr
 from app.models.registry import DocumentType, RequirementItem, RequirementSet
 from app.models.review import AuditEvent, ValidationIssue
-from app.models.tenancy import Institution, User
+from app.models.tenancy import Institution, LoginCode, User, UserSession
+from app.models.testing import TestRun
 
 __all__ = [
     "Applicant",
+    "ErasedApplicant",
     "AuditEvent",
     "Document",
     "DocumentPage",
     "DocumentType",
     "ExtractedField",
     "ImportFileRef",
+    "Job",
+    "WorkerHeartbeat",
+    "LoginCode",
+    "MlModel",
     "Institution",
+    "PageOcr",
     "RequirementItem",
     "RequirementSet",
     "StoredFile",
     "Submission",
+    "TestRun",
+    "SubmissionMessage",
     "User",
+    "UserSession",
     "ValidationIssue",
 ]
