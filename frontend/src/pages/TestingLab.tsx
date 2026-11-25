@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   labApi,
   type Metric,
@@ -96,6 +96,8 @@ function NewRun({ checklists, onCreated }: { checklists: { id: string; name: str
 export function TestRunView() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const tab = (params.get("tab") as Tab | null) ?? "students";
   const [data, setData] = useState<RunDetail | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [compareTo, setCompareTo] = useState("baseline");
@@ -125,82 +127,136 @@ export function TestRunView() {
   const failed = data.students.reduce((a, s) => a + s.failed, 0);
   const pages = data.students.reduce((a, s) => a + s.pages, 0);
 
+  const setTab = (t: Tab) => setParams(t === "students" ? {} : { tab: t }, { replace: true });
+  const otherName = compareTo === "baseline" ? "Baseline" : runs.find((r) => r.id === compareTo)?.name ?? "Other";
+
   return (
     <main className="lab">
       <Link to="/testing" className="back">← All test runs</Link>
       <header className="row-between">
         <div>
           <h1>{data.run.name}</h1>
-          {data.run.notes && <p className="muted">{data.run.notes}</p>}
+          <p className="muted small">
+            {data.students.length} student{data.students.length === 1 ? "" : "s"} · {pages} pages · reviewed {reviewed}
+            {data.run.notes && <> · {data.run.notes}</>}
+          </p>
         </div>
-        <a className="secondary-link" href={labApi.exportUrl(data.run.id)}>⬇ Export metrics (CSV)</a>
+        {processing && <span className="pill st-processing">Processing…</span>}
       </header>
 
-      <AddStudent data={data} onDone={load} />
+      <nav className="lab-tabs" role="tablist">
+        {(["students", "results", "add"] as Tab[]).map((t) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+            {TAB_LABELS[t]}{t === "students" && failed > 0 && <span className="tab-badge">{failed}</span>}
+          </button>
+        ))}
+      </nav>
 
-      <section className="card">
-        <div className="row-between">
-          <h2 className="card-title">Test students ({data.students.length})</h2>
-          {processing && <span className="pill st-processing">Processing…</span>}
-        </div>
-        {failed > 0 && (
-          <div className="lab-failed" role="alert">
-            <span>
-              <strong>{failed} file{failed === 1 ? "" : "s"} could not be processed</strong> (the worker gave up after
-              retrying). Their pages were not read, so they show as "not recognised" and documents look missing.
-            </span>
-            <button className="secondary" onClick={async () => { await labApi.retry(data.run.id); load(); }}>
-              Retry {failed === 1 ? "it" : "them"}
-            </button>
+      {tab === "add" && <BulkAdd data={data} onDone={() => { load(); setTab("students"); }} />}
+
+      {tab === "students" && (
+        <section className="card">
+          {failed > 0 && (
+            <div className="lab-failed" role="alert">
+              <span>
+                <strong>{failed} file{failed === 1 ? "" : "s"} could not be processed</strong> (the worker gave up after
+                retrying). Their pages were not read, so documents look missing.
+              </span>
+              <button className="secondary" onClick={async () => { await labApi.retry(data.run.id); load(); }}>
+                Retry {failed === 1 ? "it" : "them"}
+              </button>
+            </div>
+          )}
+          {data.students.length === 0 ? (
+            <div className="lab-empty">
+              <p>No test students yet.</p>
+              <button className="primary" onClick={() => setTab("add")}>Add students</button>
+            </div>
+          ) : (
+            <>
+              <table className="lab-table">
+                <thead><tr><th>Student</th><th className="num">Files</th><th className="num">Pages</th><th>Result</th><th className="num">Reviewed</th></tr></thead>
+                <tbody>
+                  {data.students.map((s) => (
+                    <tr key={s.id}>
+                      <td><Link to={`/submissions/${s.id}`}>{s.name}</Link></td>
+                      <td className="num">{s.documents}</td>
+                      <td className="num">{s.pages}</td>
+                      <td>{s.processing > 0
+                        ? <span className="muted small">processing {s.processing} file{s.processing === 1 ? "" : "s"}…</span>
+                        : <span className={`verdict ${s.verdict}`}>{VERDICT_LABELS[s.verdict]}</span>}
+                        {s.failed > 0 && <span className="error-text small"> · {s.failed} failed</span>}</td>
+                      <td className="num">{s.reviewed_pages} / {s.pages}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="muted small">
+                To measure accuracy, open a student and review it: ✓ right values, correct wrong ones, fix page types.
+              </p>
+            </>
+          )}
+          <DeleteRun name={data.run.name} onDelete={async (typed) => { await labApi.remove(data.run.id, typed); navigate("/testing"); }} />
+        </section>
+      )}
+
+      {tab === "results" && (
+        <section className="card">
+          <div className="row-between">
+            <label className="small compare">Compare with
+              <select value={compareTo} onChange={(e) => setCompareTo(e.target.value)}>
+                <option value="baseline">Real applicants (baseline)</option>
+                {runs.filter((r) => r.id !== data.run.id).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </label>
+            <a className="secondary-link" href={labApi.exportUrl(data.run.id)}>⬇ Export CSV</a>
           </div>
-        )}
-        {data.students.length === 0 ? <p className="muted small">Add a test student above.</p> : (
-          <>
-            <table className="lab-table">
-              <thead><tr><th>Student</th><th className="num">Files</th><th className="num">Pages</th><th>Result</th><th className="num">Reviewed</th></tr></thead>
-              <tbody>
-                {data.students.map((s) => (
-                  <tr key={s.id}>
-                    <td><Link to={`/submissions/${s.id}`}>{s.name}</Link></td>
-                    <td className="num">{s.documents}</td>
-                    <td className="num">{s.pages}</td>
-                    <td>{s.processing > 0
-                      ? <span className="muted small">processing {s.processing} file{s.processing === 1 ? "" : "s"}…</span>
-                      : <span className={`verdict ${s.verdict}`}>{VERDICT_LABELS[s.verdict]}</span>}
-                      {s.failed > 0 && <span className="error-text small"> · {s.failed} failed</span>}</td>
-                    <td className="num">{s.reviewed_pages} / {s.pages}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="muted small">
-              For accuracy, open a student and review it like a verifier: ✓ values that are right, correct the
-              wrong ones, add missing ones, and fix page types. Reviewed so far: {reviewed} of {pages} pages.
-            </p>
-          </>
-        )}
-      </section>
-
-      <section className="card">
-        <div className="row-between">
-          <h2 className="card-title">Metrics</h2>
-          <label className="small compare">Compare with
-            <select value={compareTo} onChange={(e) => setCompareTo(e.target.value)}>
-              <option value="baseline">Real applicants (baseline)</option>
-              {runs.filter((r) => r.id !== data.run.id).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
-          </label>
-        </div>
-        <MetricsTable mine={data.metrics} other={compare}
-          otherName={compareTo === "baseline" ? "Baseline" : runs.find((r) => r.id === compareTo)?.name ?? "Other"} />
-        <div className="lab-lists">
-          <CountList title="Document types recognised (pages)" counts={data.metrics.document_types} />
-          <CountList title="Open issues (students)" counts={data.metrics.issues} labels={ISSUE_TITLES} />
-        </div>
-      </section>
-
-      <DeleteRun name={data.run.name} onDelete={async (typed) => { await labApi.remove(data.run.id, typed); navigate("/testing"); }} />
+          <Headlines mine={data.metrics} other={compare} otherName={otherName} />
+          <details className="all-metrics">
+            <summary>Show all metrics</summary>
+            <MetricsTable mine={data.metrics} other={compare} otherName={otherName} />
+            <div className="lab-lists">
+              <CountList title="Document types recognised (pages)" counts={data.metrics.document_types} />
+              <CountList title="Open issues (students)" counts={data.metrics.issues} labels={ISSUE_TITLES} />
+            </div>
+          </details>
+        </section>
+      )}
     </main>
+  );
+}
+
+type Tab = "students" | "results" | "add";
+const TAB_LABELS: Record<Tab, string> = { students: "Students", results: "Results", add: "Add students" };
+
+// The numbers to look at first; everything else is under "Show all metrics".
+const HEADLINES = [
+  "recognised", "read_clear", "found_name", "sure_id", "found_grade", "verdict_clear", "students_asked", "acc_all",
+];
+
+function Headlines({ mine, other, otherName }: { mine: Metrics; other: Metrics | null; otherName: string }) {
+  const by = (m: Metrics | null) => new Map(m?.sections.flatMap((s) => s.metrics.map((x) => [x.key, x] as const)) ?? []);
+  const a = by(mine), b = by(other);
+  return (
+    <div className="headlines">
+      {HEADLINES.map((k) => {
+        const m = a.get(k);
+        if (!m) return null;
+        const o = b.get(k);
+        const diff = m.value != null && o?.value != null ? m.value - o.value : null;
+        const good = diff === null || Math.abs(diff) < 0.05 || !m.better ? "" : (diff > 0) === (m.better === "higher") ? "better" : "worse";
+        return (
+          <div key={k} className="headline">
+            <div className="headline-label">{m.label}</div>
+            <div className="headline-value">{fmt(m)}</div>
+            <div className="muted small">
+              {m.n != null && `of ${m.n}`}
+              {o && <> · {otherName} {fmt(o)}{diff !== null && <span className={good}> ({diff > 0 ? "+" : ""}{Math.round(diff * 10) / 10}{m.unit === "%" ? " pts" : ""})</span>}</>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -262,37 +318,70 @@ function CountList({ title, counts, labels }: { title: string; counts: Record<st
   );
 }
 
-/** A test student: name and answers like a real one, then files per checklist item. */
-function AddStudent({ data, onDone }: { data: RunDetail; onDone: () => void }) {
-  const [name, setName] = useState("");
+const ACCEPTED = /\.(pdf|jpe?g|png|heic|heif|webp)$/i;
+
+/** "1000203296 - Mohasin Nadaf" -> "Mohasin Nadaf": folder names often carry form numbers. */
+function nameFromFolder(folder: string): string {
+  return folder.replace(/[_.\-]+/g, " ").split(/\s+/).filter((w) => w && !/\d/.test(w)).join(" ");
+}
+
+interface Planned { key: string; name: string; files: File[]; include: boolean }
+
+/** Group files into students: a batch folder holds one folder per student; a single
+ * student's folder (or dropped files) is one student. */
+function plan(files: File[]): { students: Planned[]; skipped: number } {
+  const groups = new Map<string, File[]>();
+  let skipped = 0;
+  for (const f of files) {
+    if (!ACCEPTED.test(f.name) || f.name.startsWith(".")) { skipped++; continue; }
+    const parts = (f.webkitRelativePath || f.name).split("/");
+    const key = parts.length >= 3 ? parts[1] : parts.length === 2 ? parts[0] : "";
+    groups.set(key, [...(groups.get(key) ?? []), f]);
+  }
+  const students = [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, list]) => ({ key: key || "dropped", name: nameFromFolder(key), files: list, include: true }));
+  return { students, skipped };
+}
+
+/** Add students in bulk: pick a batch folder (one folder per student) or drop one student's
+ * files. Files are sorted into the checklist automatically once read; photo and signature
+ * by their file name ("photo", "sign"). */
+function BulkAdd({ data, onDone }: { data: RunDetail; onDone: () => void }) {
+  const folderInput = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [students, setStudents] = useState<Planned[]>([]);
+  const [skipped, setSkipped] = useState(0);
   const [degree, setDegree] = useState("has_degree");
-  const [claimed, setClaimed] = useState("");
-  const [files, setFiles] = useState<Record<string, File[]>>({});
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const form = useRef<HTMLFormElement>(null);
-  const count = Object.values(files).reduce((a, f) => a + f.length, 0);
+  const [dragging, setDragging] = useState(false);
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  const take = (files: File[]) => {
+    const p = plan(files);
+    setStudents(p.students);
+    setSkipped(p.skipped);
     setError(null);
+  };
+  const chosen = students.filter((s) => s.include);
+  const fileCount = chosen.reduce((a, s) => a + s.files.length, 0);
+
+  const upload = async () => {
+    setError(null);
+    let done = 0;
     try {
-      setProgress("Creating the test student…");
-      const { id } = await labApi.addStudent(data.run.id, {
-        name, degree_status: degree, claimed_aggregate_percent: claimed === "" ? null : Number(claimed),
-      });
-      let n = 0;
-      for (const [slot, list] of Object.entries(files)) {
-        for (const f of list) {
-          setProgress(`Uploading ${++n} of ${count}: ${f.name}`);
-          await labApi.upload(data.run.id, id, slot, f);
+      for (const [i, s] of chosen.entries()) {
+        setProgress(`Student ${i + 1} of ${chosen.length}: creating…`);
+        const { id } = await labApi.addStudent(data.run.id, { name: s.name, degree_status: degree, claimed_aggregate_percent: null });
+        for (const f of s.files) {
+          setProgress(`Student ${i + 1} of ${chosen.length} · file ${++done} of ${fileCount}: ${f.name}`);
+          await labApi.upload(data.run.id, id, "auto", f);
         }
       }
-      setName(""); setClaimed(""); setFiles({});
-      form.current?.reset();
+      setStudents([]);
       onDone();
     } catch (err) {
-      setError((err as Error).message);
+      setError(`${(err as Error).message} (stopped after ${done} file${done === 1 ? "" : "s"}; students already added are kept)`);
       onDone();
     } finally {
       setProgress(null);
@@ -300,34 +389,68 @@ function AddStudent({ data, onDone }: { data: RunDetail; onDone: () => void }) {
   };
 
   return (
-    <form ref={form} className="card lab-form" onSubmit={submit}>
-      <h2 className="card-title">Add a test student</h2>
-      <div className="lab-grid">
-        <label>Full name (as on the documents)<input value={name} maxLength={255}
-          placeholder="Leave empty to skip the name check" onChange={(e) => setName(e.target.value)} /></label>
-        <label>Degree status
-          <select value={degree} onChange={(e) => setDegree(e.target.value)}>
-            {Object.entries(data.degree_statuses).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </label>
-        <label>Claimed aggregate % (optional)<input type="number" min={0} max={100} step="0.01" value={claimed}
-          onChange={(e) => setClaimed(e.target.value)} /></label>
-      </div>
-      <div className="lab-files">
-        {data.checklist.map((item) => (
-          <label key={item.key} className="lab-file">
-            <span>{item.label}</span>
-            <input type="file" multiple accept="application/pdf,image/*"
-              onChange={(e) => setFiles({ ...files, [item.key]: Array.from(e.target.files ?? []) })} />
-          </label>
-        ))}
-      </div>
-      {error && <p className="error-text small" role="alert">{error}</p>}
-      <div className="row-between">
-        <span className="muted small">{progress ?? `${count} file${count === 1 ? "" : "s"} selected`}</span>
-        <button className="primary" disabled={!!progress || count === 0}>Add student and upload</button>
-      </div>
-    </form>
+    <section className="card lab-form">
+      {students.length === 0 ? (
+        <div
+          className={`drop-zone ${dragging ? "over" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); take(Array.from(e.dataTransfer.files)); }}
+        >
+          <div className="strong">Drop one student's files here</div>
+          <div className="muted small">or</div>
+          <div className="drop-buttons">
+            <button className="primary" onClick={() => folderInput.current?.click()}>Choose a batch folder</button>
+            <button className="secondary" onClick={() => fileInput.current?.click()}>Choose files</button>
+          </div>
+          <p className="muted small">
+            A batch folder holds one folder per student (folder name = student name; form numbers in it are ignored).
+            Files are sorted into the checklist automatically after reading. Name photo and signature files with
+            "photo" and "sign" so they are recognised.
+          </p>
+          <input ref={folderInput} type="file" hidden multiple
+            {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+            onChange={(e) => take(Array.from(e.target.files ?? []))} />
+          <input ref={fileInput} type="file" hidden multiple accept="application/pdf,image/*"
+            onChange={(e) => take(Array.from(e.target.files ?? []))} />
+        </div>
+      ) : (
+        <>
+          <div className="row-between">
+            <div className="strong">{chosen.length} student{chosen.length === 1 ? "" : "s"}, {fileCount} files
+              {skipped > 0 && <span className="muted small"> · {skipped} other file{skipped === 1 ? "" : "s"} skipped (not PDF or image)</span>}
+            </div>
+            <label className="small compare">Degree status
+              <select value={degree} onChange={(e) => setDegree(e.target.value)}>
+                {Object.entries(data.degree_statuses).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </label>
+          </div>
+          <table className="lab-table">
+            <thead><tr><th></th><th>Student name (check it: used for the name check)</th><th className="num">Files</th></tr></thead>
+            <tbody>
+              {students.map((s, i) => (
+                <tr key={s.key}>
+                  <td><input type="checkbox" checked={s.include} aria-label={`Include ${s.name}`}
+                    onChange={(e) => setStudents(students.map((x, j) => j === i ? { ...x, include: e.target.checked } : x))} /></td>
+                  <td><input className="name-input" value={s.name} placeholder="Name as on the documents"
+                    onChange={(e) => setStudents(students.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} /></td>
+                  <td className="num" title={s.files.map((f) => f.name).join("\n")}>{s.files.length}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {error && <p className="error-text small" role="alert">{error}</p>}
+          <div className="row-between">
+            <button className="link-button" disabled={!!progress} onClick={() => setStudents([])}>Start over</button>
+            <span className="muted small">{progress}</span>
+            <button className="primary" disabled={!!progress || fileCount === 0} onClick={upload}>
+              Upload {chosen.length} student{chosen.length === 1 ? "" : "s"}
+            </button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

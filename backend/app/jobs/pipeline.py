@@ -32,6 +32,7 @@ from app.models.enums import DocumentStatus, JobStage, QualityVerdict, Readabili
 from app.ocr.engine import OcrEngine, TesseractEngine
 from app.ocr.pipeline import read_new_page, second_opinion
 from app.storage import ObjectStorage
+from app.testing.sorting import assign_slot
 from app.validate.engine import validate_submission
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,7 @@ def read_document(
     classify_document(
         db, doc, type_id_map(db), load_model(db, engines.models_dir), phrase_rules(db)
     )
+    assign_slot(db, doc)  # Testing Lab bulk uploads: now that we know what it is
     db.commit()
 
     progress(db, job, JobStage.EXTRACTING)

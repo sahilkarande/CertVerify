@@ -20,21 +20,27 @@ export default function SubmissionList() {
   const [params, setParams] = useSearchParams();
   const filter = (params.get("verdict") as Verdict | "all") ?? "all";
   const query = params.get("q") ?? "";
+  // Imported seed applicants (Google Form) outnumber everyone else: hide them to find yours.
+  const source = (params.get("source") as "all" | "portal" | "form_import" | null) ?? "all";
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchSubmissions().then(setRows, (e: Error) => setError(e.message));
   }, []);
 
+  const mine = useMemo(
+    () => (rows ?? []).filter((r) => source === "all" || r.source === source),
+    [rows, source],
+  );
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: rows?.length ?? 0, problems: 0, review: 0, clear: 0 };
-    rows?.forEach((r) => (c[r.verdict] += 1));
+    const c: Record<string, number> = { all: mine.length, problems: 0, review: 0, clear: 0 };
+    mine.forEach((r) => (c[r.verdict] += 1));
     return c;
-  }, [rows]);
+  }, [mine]);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (rows ?? [])
+    return mine
       .filter((r) => filter === "all" || r.verdict === filter)
       .filter((r) => !q || r.name.toLowerCase().includes(q) || (r.form_number ?? "").includes(q))
       .sort(
@@ -44,7 +50,7 @@ export default function SubmissionList() {
           b.issues.warning - a.issues.warning ||
           a.name.localeCompare(b.name),
       );
-  }, [rows, filter, query]);
+  }, [mine, filter, query]);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -70,6 +76,12 @@ export default function SubmissionList() {
         />
       </div>
       <div className="filters" role="tablist">
+        <select className="source-filter" value={source} aria-label="Which applicants"
+          onChange={(e) => setParam("source", e.target.value)}>
+          <option value="all">All applicants ({rows.length})</option>
+          <option value="portal">Signed up on the portal ({rows.filter((r) => r.source === "portal").length})</option>
+          <option value="form_import">Imported from the form ({rows.filter((r) => r.source === "form_import").length})</option>
+        </select>
         {FILTERS.map((f) => (
           <button
             key={f}

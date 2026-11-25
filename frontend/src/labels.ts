@@ -1,6 +1,7 @@
 // Human-readable labels for codes coming from the backend.
 
 export const SLOT_LABELS: Record<string, string> = {
+  auto: "Unsorted (not recognised)",
   photo: "Photo",
   signature: "Signature",
   ssc: "10th marksheet",

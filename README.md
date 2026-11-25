@@ -329,8 +329,13 @@ Some things are not deleted:
 **Testing Lab** in the top bar measures the system on a new batch of real documents before you rely on it.
 
 1. **Create a test run.** Name it, and note what you are testing (e.g. "after switching to Paddle 3.2.2").
-2. **Add test students.** For each one, enter a name (used for the name check), the degree status and an optional
-   claimed %, then choose files for each checklist item, like a student would.
+2. **Add test students** (the *Add students* tab):
+   - **Bulk:** choose a batch folder with one folder per student. The folder name becomes the student name; form
+     numbers in it are ignored.
+   - **One student:** drop their files.
+   - **Before uploading:** check the names in the preview (they are used for the name check).
+   - **Sorting:** files are sorted into the checklist automatically once read. Photo and signature are recognised
+     by file name ("photo", "sign"). Anything that could not be recognised shows as "Unsorted".
 3. **Let it process.** Uploads go through the real pipeline but wait behind real students. The page refreshes while
    processing.
 4. **Read the metrics.** Each run is compared with the real applicants (the baseline) or with another run, and the

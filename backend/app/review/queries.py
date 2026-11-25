@@ -69,6 +69,7 @@ def submission_list(db: Session, institution_id: uuid.UUID | None) -> list[dict]
                 "id": str(sub.id),
                 "name": app.full_name,
                 "form_number": app.external_ref,
+                "source": app.source.value,  # form_import (seed data) or portal
                 "status": sub.status.value,
                 "degree_status": sub.attributes.get("degree_status"),
                 "claimed_percent": sub.attributes.get("claimed_aggregate_percent"),

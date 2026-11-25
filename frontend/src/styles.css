@@ -377,3 +377,22 @@ button.erase-button:disabled { opacity: .45; cursor: not-allowed; }
 .lab-table td a { font-weight: 600; text-decoration: none; }
 .lab-table td a:hover { text-decoration: underline; }
 .lab-failed { display: flex; gap: 12px; align-items: center; justify-content: space-between; background: var(--error-soft); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+
+.lab-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.lab-tabs button { background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 14px; color: var(--muted); cursor: pointer; font: inherit; font-weight: 600; }
+.lab-tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab-badge { margin-left: 6px; background: var(--error); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 12px; }
+.lab-empty { display: grid; gap: 10px; justify-items: start; }
+.headlines { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.headline { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--bg); display: grid; gap: 2px; }
+.headline-label { font-size: 13px; color: var(--muted); }
+.headline-value { font-size: 24px; font-weight: 700; }
+.headline .better { color: var(--ok); font-weight: 600; }
+.headline .worse { color: var(--error); font-weight: 600; }
+.all-metrics summary { cursor: pointer; color: var(--accent); font-weight: 600; margin: 4px 0 10px; }
+.drop-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 28px 16px; display: grid; gap: 8px; justify-items: center; text-align: center; }
+.drop-zone.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop-zone p { max-width: 640px; margin: 6px 0 0; }
+.drop-buttons { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.name-input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.source-filter { margin-right: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }

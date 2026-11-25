@@ -1,6 +1,8 @@
 """Testing Lab: batches of test students processed like real uploads, kept apart from real
 applicants, measured against the baseline, and deleted as a whole."""
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -17,6 +19,7 @@ from app.models import (
     Document,
     ExtractedField,
     Job,
+    RequirementItem,
     StoredFile,
     Submission,
     TestRun,
@@ -43,6 +46,14 @@ def lab(client: TestClient, session: Session):
     seed_document_types(session)
     inst = make_institution(session)
     rs = make_requirement_set(session, inst)
+    for pos, (key, types) in enumerate(
+        [("photo", ["passport_photo"]), ("signature", ["signature"]),
+         ("degree_or_fallback", ["degree_certificate", "semester_marksheet"]),
+         ("semester_marksheets", ["semester_marksheet"])], start=5,
+    ):  # fmt: skip
+        rs.items.append(
+            RequirementItem(key=key, label=key, position=pos, accepted_type_codes=types)
+        )
     make_user(session, "platform@c.test", UserRole.PLATFORM_ADMIN)
     session.commit()
     sign_in(client, "platform@c.test")
@@ -62,12 +73,12 @@ def _new_run_with_student(client: TestClient, name: str = "Pune batch") -> tuple
     return run_id, sub.json()["id"]
 
 
-def _upload(client: TestClient, run_id: str, sub_id: str, data: bytes, slot: str = "ssc"):
+def _upload(client, run_id: str, sub_id: str, data: bytes, slot: str = "ssc", name="scan.jpg"):
     r = client.post(
         f"{A}/{run_id}/students/{sub_id}/documents",
         headers=CSRF,
         data={"slot": slot},
-        files={"file": ("scan.jpg", data, "image/jpeg")},
+        files={"file": (name, data, "image/jpeg")},
     )
     assert r.status_code == 202, r.text
     return r.json()["document_id"]
@@ -251,3 +262,51 @@ def test_failed_files_are_shown_and_can_be_retried(
     session.expire_all()
     retry = session.scalars(select(Job).order_by(Job.created_at.desc())).first()
     assert retry.kind == "process_document" and retry.priority == 200  # complete, still last
+
+
+def test_bulk_uploads_are_sorted_into_the_checklist(
+    client: TestClient, session: Session, database: Database, storage, lab
+) -> None:
+    run_id, sub_id = _new_run_with_student(client)
+    marks = _upload(client, run_id, sub_id, jpeg(), slot="auto", name="all marks.jpg")
+    photo = _upload(client, run_id, sub_id, jpeg(w=600), slot="auto", name="Passport Photo.jpg")
+    sign = _upload(client, run_id, sub_id, jpeg(w=700), slot="auto", name="sign - asha.jpg")
+    worker = _worker(database, storage)
+    while worker.run_once():
+        pass
+    session.expire_all()
+    slot = {d: session.get(Document, uuid.UUID(d)).slot_key for d in (marks, photo, sign)}
+    # Read as a semester marksheet: its own item, not the degree item's fallback.
+    assert slot[marks] == "semester_marksheets"
+    assert (slot[photo], slot[sign]) == ("photo", "signature")  # by file name, not read
+
+
+def test_unrecognised_bulk_files_stay_unsorted(
+    client: TestClient, session: Session, database: Database, storage, lab, monkeypatch
+) -> None:
+    import app.jobs.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "classify_document", lambda *a, **k: None)  # nothing known
+    run_id, sub_id = _new_run_with_student(client)
+    doc = _upload(client, run_id, sub_id, jpeg(), slot="auto")
+    worker = _worker(database, storage)
+    while worker.run_once():
+        pass
+    session.expire_all()
+    assert session.get(Document, uuid.UUID(doc)).slot_key == "auto"
+
+
+def test_only_test_students_may_upload_unsorted(client: TestClient, session: Session, lab):
+    from fastapi import HTTPException
+
+    from app.portal.uploads import add_document
+
+    real = Applicant(institution_id=lab["inst"].id, full_name="Real", source=ApplicantSource.PORTAL)
+    session.add(real)
+    session.flush()
+    sub = Submission(applicant_id=real.id, requirement_set_id=lab["rs"].id)
+    session.add(sub)
+    session.flush()
+    with pytest.raises(HTTPException) as e:
+        add_document(session, None, sub, "auto", jpeg(), "x.jpg", uuid.uuid4())
+    assert e.value.status_code == 422

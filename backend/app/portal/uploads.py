@@ -19,6 +19,7 @@ from app.services.audit import record_event
 from app.services.files import store_file
 from app.services.filetypes import HEIC, JPEG, PDF, PNG, WEBP, sniff_mime
 from app.storage import ObjectStorage
+from app.testing.sorting import AUTO_SLOT, slot_from_filename
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ACCEPTED = {PDF, JPEG, PNG, HEIC, WEBP}
@@ -59,7 +60,11 @@ def add_document(
 ) -> tuple[Document, uuid.UUID]:
     """Validate and store the file, create the document and queue its processing.
     Returns (document, job id). Caller commits."""
-    if slot not in slot_keys(db, sub):
+    keys = slot_keys(db, sub)
+    if slot == AUTO_SLOT and sub.test_run_id is not None:
+        # Testing Lab bulk upload: sorted into the right item once recognised.
+        slot = slot_from_filename(filename, keys) or AUTO_SLOT
+    elif slot not in keys:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown document slot.")
     if not data:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "The file is empty.")

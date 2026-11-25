@@ -7,6 +7,7 @@ export interface SubmissionRow {
   id: string;
   name: string;
   form_number: string | null;
+  source: "form_import" | "portal" | "test";
   status: string;
   degree_status: string | null;
   claimed_percent: number | null;
