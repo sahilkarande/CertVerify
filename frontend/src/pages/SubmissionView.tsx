@@ -30,13 +30,29 @@ interface Selected {
   page: Page;
 }
 
+/** Pages an issue points at, within its file; null = the whole file. */
+function issuePages(i: Issue): number[] | null {
+  if (typeof i.details.page === "number") return [i.details.page];
+  if (Array.isArray(i.details.pages)) return i.details.pages.filter((n): n is number => typeof n === "number");
+  return null;
+}
+
+const isOn = (i: Issue, doc: DocumentInfo, page: Page) => {
+  const pages = issuePages(i);
+  return i.document_id === doc.id && (pages === null || pages.includes(page.number));
+};
+
+/** Typing in a field must never flip pages. */
+const typing = (t: EventTarget | null) =>
+  t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+
 export default function SubmissionView({ me }: { me: Me }) {
   const { id } = useParams();
   const [data, setData] = useState<SubmissionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageId, setPageId] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
-  const [showClosed, setShowClosed] = useState(false);
+  const [help, setHelp] = useState(false);
 
   const load = useCallback(
     (focusDocument?: string) => {
@@ -67,137 +83,182 @@ export default function SubmissionView({ me }: { me: Me }) {
     () => data?.documents.flatMap((doc) => doc.pages.map((page) => ({ doc, page }))) ?? [],
     [data],
   );
+  const openIssues = useMemo(() => data?.issues.filter((i) => i.status === "open") ?? [], [data]);
+  // Pages that still have something to look at (warnings and errors; notes do not count).
+  const flagged = useMemo(() => {
+    const set = new Set<string>();
+    for (const i of openIssues) {
+      if (i.severity === "info") continue;
+      const doc = data?.documents.find((d) => d.id === i.document_id);
+      if (!doc) continue;
+      const pages = issuePages(i);
+      const hits = pages === null ? doc.pages.slice(0, 1) : doc.pages.filter((p) => pages.includes(p.number));
+      (hits.length ? hits : doc.pages.slice(0, 1)).forEach((p) => set.add(p.id));
+    }
+    return set;
+  }, [openIssues, data]);
   const selected: Selected | undefined = allPages.find((x) => x.page.id === pageId);
+  const index = allPages.findIndex((x) => x.page.id === pageId);
 
   const step = useCallback(
     (delta: number) => {
-      const i = allPages.findIndex((x) => x.page.id === pageId);
-      const next = allPages[i + delta];
+      const next = allPages[index + delta];
       if (next) setPageId(next.page.id);
     },
-    [allPages, pageId],
+    [allPages, index],
+  );
+  const nextFlagged = useCallback(
+    (delta: 1 | -1) => {
+      const n = allPages.length;
+      for (let k = 1; k <= n; k++) {
+        const x = allPages[(((index + delta * k) % n) + n) % n];
+        if (flagged.has(x.page.id)) return setPageId(x.page.id);
+      }
+    },
+    [allPages, flagged, index],
   );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
+      if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "ArrowRight" || e.key === "j") step(1);
-      if (e.key === "ArrowLeft" || e.key === "k") step(-1);
+      else if (e.key === "ArrowLeft" || e.key === "k") step(-1);
+      else if (e.key === "n") nextFlagged(1);
+      else if (e.key === "p") nextFlagged(-1);
+      else if (e.key === "?") setHelp((h) => !h);
+      else if (e.key === "Escape") setHelp(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step]);
+  }, [step, nextFlagged]);
 
   if (error) return <p className="page-pad error-text">Could not load this applicant ({error}).</p>;
   if (!data) return <p className="page-pad muted">Loading…</p>;
 
-  const openIssues = data.issues.filter((i) => i.status === "open");
   const closedIssues = data.issues.filter((i) => i.status !== "open");
-  const issuesByDoc = new Map<string, Issue[]>();
-  openIssues.forEach((i) => {
-    if (i.document_id && i.severity !== "info")
-      issuesByDoc.set(i.document_id, [...(issuesByDoc.get(i.document_id) ?? []), i]);
-  });
-
-  const goToIssue = (issue: Issue) => {
-    const doc = data.documents.find((d) => d.id === issue.document_id);
-    if (!doc) return;
-    const wanted = typeof issue.details.page === "number" ? issue.details.page : null;
-    const page = doc.pages.find((p) => p.number === wanted) ?? doc.pages[0];
-    if (page) setPageId(page.id);
-  };
+  const general = openIssues.filter((i) => !i.document_id);
+  const docCount = (doc: DocumentInfo) =>
+    openIssues.filter((i) => i.document_id === doc.id && i.severity !== "info");
+  const toCheck = openIssues.filter((i) => i.severity !== "info").length;
+  const lastMessage = data.messages[data.messages.length - 1];
 
   const attrs = data.attributes;
   return (
     <main className="review-layout">
       <aside className="sidebar">
-        {data.test_run ? (
-          <Link to={`/testing/${data.test_run.id}`} className="back">← Test run: {data.test_run.name}</Link>
-        ) : (
-          <Link to="/" className="back">
-            ← All applicants
-          </Link>
-        )}
-        {data.test_run && <span className="pill test-pill">Test student</span>}
-        <h1 className="applicant-name">{data.applicant.name}</h1>
-        <span className={`verdict ${data.verdict}`}>{VERDICT_LABELS[data.verdict]}</span>
-        <DecisionPanel data={data} reload={() => load()} />
-        <dl className="facts">
-          <dt>Form no.</dt>
-          <dd className="mono">{data.applicant.form_number ?? "—"}</dd>
-          <dt>Degree status</dt>
-          <dd>{label(DEGREE_STATUS, attrs.degree_status as string)}</dd>
-          <dt>Claimed aggregate</dt>
-          <dd>{attrs.claimed_aggregate_percent != null ? `${attrs.claimed_aggregate_percent}%` : "—"}</dd>
-          <dt>Course</dt>
-          <dd>{(attrs.course as string) ?? "—"}</dd>
-          <dt>Email</dt>
-          <dd className="wrap">{data.applicant.email ?? "—"}</dd>
-        </dl>
+        <div className="sidebar-scroll">
+          {data.test_run ? (
+            <Link to={`/testing/${data.test_run.id}`} className="back">← Test run: {data.test_run.name}</Link>
+          ) : (
+            <Link to="/" className="back">
+              ← All applicants
+            </Link>
+          )}
+          <h1 className="applicant-name">
+            {data.applicant.name}
+            {data.test_run && <span className="pill test-pill">Test student</span>}
+          </h1>
+          <div className="todo-bar">
+            <span className={`verdict ${data.verdict}`}>{VERDICT_LABELS[data.verdict]}</span>
+            {flagged.size > 0 ? (
+              <button className="secondary small-button" onClick={() => nextFlagged(1)} title="Shortcut: N">
+                Next issue ›
+              </button>
+            ) : (
+              toCheck === 0 && <span className="muted small">Nothing left to check</span>
+            )}
+          </div>
 
-        <h2>
-          Issues <span className="count">{openIssues.length}</span>
-        </h2>
-        {openIssues.length === 0 && <p className="muted small">No open issues.</p>}
-        <ul className="issues">
-          {openIssues.map((i) => (
-            <IssueItem key={i.id} issue={i} reload={() => load()}
-              onShow={i.document_id ? () => goToIssue(i) : undefined} />
-          ))}
-        </ul>
-        {closedIssues.length > 0 && (
-          <button className="link-button" onClick={() => setShowClosed(!showClosed)}>
-            {showClosed ? "Hide" : "Show"} {closedIssues.length} resolved/dismissed
-          </button>
-        )}
-        {showClosed && (
-          <ul className="issues closed">
-            {closedIssues.map((i) => (
-              <IssueItem key={i.id} issue={i} reload={() => load()} />
-            ))}
-          </ul>
-        )}
-
-        <h2>
-          Messages <span className="count">{data.messages.length}</span>
-        </h2>
-        <MessageThread messages={data.messages}
-          send={async (body) => { await console_.message(data.id, body); load(); }} />
-
-        <h2>Documents</h2>
-        <UploadPanel submissionId={data.id} onProcessed={load} />
-        <ul className="docs">
-          {data.documents.map((doc) => (
-            <li key={doc.id}>
-              <div className="doc-head">
-                <span>{label(SLOT_LABELS, doc.slot)}</span>
-                {issuesByDoc.has(doc.id) && (
-                  <span
-                    className={`flag ${issuesByDoc.get(doc.id)!.some((i) => i.severity === "error") ? "error" : "warning"}`}
-                    title={issuesByDoc.get(doc.id)!.map((i) => i.message).join("\n")}
-                  >
-                    !
-                  </span>
-                )}
-              </div>
-              {doc.processing_error && <p className="error-text small">{doc.processing_error}</p>}
-              <div className="page-chips">
-                {doc.pages.map((p) => (
-                  <button
-                    key={p.id}
-                    className={`chip ${p.id === pageId ? "active" : ""} ${p.type ? "" : "unknown"} q-${p.quality}`}
-                    onClick={() => setPageId(p.id)}
-                    title={`${p.type_name ?? "Not recognised"}${p.semesters.length ? ` · sem ${p.semesters.join(", ")}` : ""}${p.quality && p.quality !== "ok" ? ` · quality: ${p.quality}` : ""}`}
-                  >
-                    {p.number}
-                  </button>
+          {general.length > 0 && (
+            <section>
+              <h2>
+                About the application <span className="count">{general.length}</span>
+              </h2>
+              <ul className="issues">
+                {general.map((i) => (
+                  <IssueItem key={i.id} issue={i} reload={() => load()} />
                 ))}
-              </div>
-            </li>
-          ))}
-        </ul>
+              </ul>
+            </section>
+          )}
 
-        {(me.role === "platform_admin" || me.role === "institution_admin") && <DeleteRecord data={data} />}
+          <h2>Documents</h2>
+          <ul className="docs">
+            {data.documents.map((doc) => {
+              const issues = docCount(doc);
+              return (
+                <li key={doc.id}>
+                  <div className="doc-head">
+                    <span>{label(SLOT_LABELS, doc.slot)}</span>
+                    {issues.length > 0 && (
+                      <span className={`flag ${issues.some((i) => i.severity === "error") ? "error" : "warning"}`}
+                        title={issues.map((i) => label(ISSUE_TITLES, i.code)).join("\n")}>
+                        {issues.length}
+                      </span>
+                    )}
+                  </div>
+                  {doc.processing_error && <p className="error-text small">{doc.processing_error}</p>}
+                  <div className="page-chips">
+                    {doc.pages.map((p) => (
+                      <button
+                        key={p.id}
+                        className={`chip ${p.id === pageId ? "active" : ""} ${p.type ? "" : "unknown"} ${flagged.has(p.id) ? "flagged" : ""}`}
+                        onClick={() => setPageId(p.id)}
+                        title={`${p.type_name ?? "Not recognised"}${p.semesters.length ? ` · sem ${p.semesters.join(", ")}` : ""}${flagged.has(p.id) ? " · has an issue" : ""}`}
+                      >
+                        {p.number}
+                      </button>
+                    ))}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          <details className="fold" open={!!lastMessage && !lastMessage.from_staff}>
+            <summary>
+              Messages <span className="count">{data.messages.length}</span>
+              {lastMessage && !lastMessage.from_staff && <span className="pill small-pill">Student replied</span>}
+            </summary>
+            <MessageThread messages={data.messages}
+              send={async (body) => { await console_.message(data.id, body); load(); }} />
+          </details>
+          <details className="fold">
+            <summary>Student details</summary>
+            <dl className="facts">
+              <dt>Form no.</dt>
+              <dd className="mono">{data.applicant.form_number ?? "—"}</dd>
+              <dt>Degree status</dt>
+              <dd>{label(DEGREE_STATUS, attrs.degree_status as string)}</dd>
+              <dt>Claimed aggregate</dt>
+              <dd>{attrs.claimed_aggregate_percent != null ? `${attrs.claimed_aggregate_percent}%` : "—"}</dd>
+              <dt>Course</dt>
+              <dd>{(attrs.course as string) ?? "—"}</dd>
+              <dt>Email</dt>
+              <dd className="wrap">{data.applicant.email ?? "—"}</dd>
+            </dl>
+          </details>
+          <details className="fold">
+            <summary>Add a file for the student</summary>
+            <UploadPanel submissionId={data.id} onProcessed={load} />
+          </details>
+          {closedIssues.length > 0 && (
+            <details className="fold">
+              <summary>
+                Resolved or dismissed <span className="count">{closedIssues.length}</span>
+              </summary>
+              <ul className="issues closed">
+                {closedIssues.map((i) => (
+                  <IssueItem key={i.id} issue={i} reload={() => load()} />
+                ))}
+              </ul>
+            </details>
+          )}
+          {(me.role === "platform_admin" || me.role === "institution_admin") && <DeleteRecord data={data} />}
+        </div>
+        <div className="sidebar-footer">
+          <DecisionPanel data={data} reload={() => load()} />
+        </div>
       </aside>
 
       {selected ? (
@@ -205,10 +266,12 @@ export default function SubmissionView({ me }: { me: Me }) {
           <PageViewer page={selected.page} hovered={hovered} />
           <PagePanel
             sel={selected}
+            issues={openIssues.filter((i) => isOn(i, selected.doc, selected.page))}
             hovered={hovered}
             onHover={setHovered}
-            position={`${allPages.findIndex((x) => x.page.id === pageId) + 1} / ${allPages.length}`}
+            position={`${index + 1} / ${allPages.length}`}
             onStep={step}
+            onHelp={() => setHelp(true)}
             reload={() => load()}
             types={data.document_types}
           />
@@ -216,7 +279,34 @@ export default function SubmissionView({ me }: { me: Me }) {
       ) : (
         <p className="page-pad muted">This applicant has no pages to show.</p>
       )}
+      {help && <ShortcutHelp onClose={() => setHelp(false)} />}
     </main>
+  );
+}
+
+function ShortcutHelp({ onClose }: { onClose: () => void }) {
+  const keys: [string, string][] = [
+    ["→  or  J", "Next page"],
+    ["←  or  K", "Previous page"],
+    ["N", "Next page with an issue"],
+    ["P", "Previous page with an issue"],
+    ["?", "Show or hide this list"],
+  ];
+  return (
+    <div className="shortcut-backdrop" onClick={onClose}>
+      <div className="shortcut-card" role="dialog" aria-label="Keyboard shortcuts" onClick={(e) => e.stopPropagation()}>
+        <h2>Keyboard shortcuts</h2>
+        <dl>
+          {keys.map(([k, v]) => (
+            <div key={k}>
+              <dt><kbd>{k}</kbd></dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+        <button className="secondary" onClick={onClose}>Close</button>
+      </div>
+    </div>
   );
 }
 
@@ -282,8 +372,11 @@ function DeleteRecord({ data }: { data: SubmissionDetail }) {
   );
 }
 
-function IssueItem({ issue, onShow, reload }: { issue: Issue; onShow?: () => void; reload: () => void }) {
-  const details = Object.entries(issue.details).filter(([k]) => k !== "item");
+/** Bookkeeping, or already shown by where the issue appears. */
+const HIDDEN_DETAILS = new Set(["item", "key", "rules_version", "page", "pages"]);
+
+function IssueItem({ issue, reload }: { issue: Issue; reload: () => void }) {
+  const details = Object.entries(issue.details).filter(([k]) => !HIDDEN_DETAILS.has(k));
   return (
     <li className={`issue ${issue.severity} ${issue.status}`}>
       <div className="issue-title">
@@ -301,11 +394,6 @@ function IssueItem({ issue, onShow, reload }: { issue: Issue; onShow?: () => voi
             </div>
           ))}
         </dl>
-      )}
-      {onShow && (
-        <button className="link-button" onClick={onShow}>
-          Show document →
-        </button>
       )}
       <IssueActions issue={issue} reload={reload} />
     </li>
@@ -327,9 +415,9 @@ function PageViewer({ page, hovered }: { page: Page; hovered: string | null }) {
     setFailed(false);
   }, [page.id]);
 
-  if (!page.has_image) return <section className="viewer muted">No image for this page.</section>;
+  if (!page.has_image) return <section className="page-view muted">No image for this page.</section>;
   return (
-    <section className="viewer">
+    <section className="page-view">
       <div className="image-wrap">
         {!loaded && !failed && <div className="image-loading muted">Loading page…</div>}
         {failed && <div className="image-loading error-text">Could not load the page image.</div>}
@@ -369,10 +457,12 @@ function confClass(c: number | null) {
 
 function PagePanel(props: {
   sel: Selected;
+  issues: Issue[];
   hovered: string | null;
   onHover: (k: string | null) => void;
   position: string;
   onStep: (d: number) => void;
+  onHelp: () => void;
   reload: () => void;
   types: { code: string; name: string }[];
 }) {
@@ -381,16 +471,15 @@ function PagePanel(props: {
   const fields = [...page.fields].sort(
     (a, b) => fieldOrder.indexOf(a.key) - fieldOrder.indexOf(b.key),
   );
+  const problems = props.issues.filter((i) => i.severity !== "info");
+  const notes = props.issues.filter((i) => i.severity === "info");
   return (
     <aside className="panel">
       <div className="pager">
         <button onClick={() => props.onStep(-1)} aria-label="Previous page">
           ‹
         </button>
-        <span className="muted small">
-          Page {props.position} <kbd>←</kbd>
-          <kbd>→</kbd>
-        </span>
+        <span className="muted small">Page {props.position}</span>
         <button onClick={() => props.onStep(1)} aria-label="Next page">
           ›
         </button>
@@ -398,38 +487,34 @@ function PagePanel(props: {
       <h2 className="page-title">{page.type_name ?? "Not recognised"}</h2>
       <p className="muted small">
         {label(SLOT_LABELS, doc.slot)} · page {page.number} of {doc.page_count}
+        {page.semesters.length > 0 && ` · semester ${page.semesters.join(", ")}`}
       </p>
-      <PageTypePicker page={page} types={props.types} reload={props.reload} />
-      <dl className="facts">
-        <dt>Recognised by</dt>
-        <dd>
-          {page.classification_method ? humanize(page.classification_method) : "—"}
-          {page.classification_confidence != null && (
-            <ConfidenceTag value={page.classification_confidence} />
-          )}
-        </dd>
-        {page.semesters.length > 0 && (
-          <>
-            <dt>Semester</dt>
-            <dd>{page.semesters.join(", ")}</dd>
-          </>
-        )}
-        <dt>Quality</dt>
-        <dd className={page.quality && page.quality !== "ok" ? "warning-text" : ""}>
-          {page.quality ?? "—"}
-          {page.quality_reasons.length > 0 && ` (${page.quality_reasons.join(", ").replace(/_/g, " ")})`}
-        </dd>
-        <dt>Text reading</dt>
-        <dd>
-          {page.ocr
-            ? `${page.ocr.engine}, ${page.ocr.status.replace(/_/g, " ")}${page.ocr.confidence != null ? `, ${Math.round(page.ocr.confidence)}%` : ""}`
-            : "—"}
-        </dd>
-      </dl>
 
-      <h2>Extracted values</h2>
+      {problems.length > 0 ? (
+        <ul className="issues page-issues">
+          {problems.map((i) => (
+            <IssueItem key={i.id} issue={i} reload={props.reload} />
+          ))}
+        </ul>
+      ) : (
+        <p className="all-clear small">Nothing flagged on this page.</p>
+      )}
+      {notes.length > 0 && (
+        <details className="fold notes">
+          <summary className="small">
+            {notes.length} note{notes.length > 1 ? "s" : ""} (no action needed)
+          </summary>
+          <ul className="issues">
+            {notes.map((i) => (
+              <IssueItem key={i.id} issue={i} reload={props.reload} />
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <h2>Values read from this page</h2>
       {fields.length === 0 ? (
-        <p className="muted small">No values extracted from this page.</p>
+        <p className="muted small">No values read from this page.</p>
       ) : (
         <table className="fields">
           <tbody>
@@ -440,10 +525,38 @@ function PagePanel(props: {
         </table>
       )}
       {page.addable_fields.length > 0 && <AddField page={page} reload={props.reload} />}
+
+      <details className="fold" open={!page.type}>
+        <summary className="small">{page.type ? "Page details and type" : "Set the page type"}</summary>
+        <PageTypePicker page={page} types={props.types} reload={props.reload} />
+        <dl className="facts">
+          <dt>Recognised by</dt>
+          <dd>
+            {page.classification_method ? humanize(page.classification_method) : "—"}
+            {page.classification_confidence != null && (
+              <ConfidenceTag value={page.classification_confidence} />
+            )}
+          </dd>
+          <dt>Quality</dt>
+          <dd className={page.quality && page.quality !== "ok" ? "warning-text" : ""}>
+            {page.quality ?? "—"}
+            {page.quality_reasons.length > 0 && ` (${page.quality_reasons.join(", ").replace(/_/g, " ")})`}
+          </dd>
+          <dt>Text reading</dt>
+          <dd>
+            {page.ocr
+              ? `${page.ocr.engine}, ${page.ocr.status.replace(/_/g, " ")}${page.ocr.confidence != null ? `, ${Math.round(page.ocr.confidence)}%` : ""}`
+              : "—"}
+          </dd>
+        </dl>
+      </details>
       <p className="muted small legend">
-        <span className="swatch high" /> confident (≥ 0.9) <span className="swatch mid" /> check{" "}
+        <span className="swatch high" /> confident <span className="swatch mid" /> check{" "}
         <span className="swatch low" /> unsure
       </p>
+      <button className="link-button small" onClick={props.onHelp}>
+        Keyboard shortcuts <kbd>?</kbd>
+      </button>
     </aside>
   );
 }

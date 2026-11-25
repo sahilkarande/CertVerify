@@ -50,12 +50,13 @@ export function DecisionPanel({ data, reload }: { data: SubmissionDetail; reload
 
   return (
     <section className="decision">
-      <div className="row-between">
-        <span className={`pill s-${data.status}`}>{STATUS_LABEL[data.status] ?? data.status}</span>
-        {data.decision.by && (
-          <span className="muted small">by {data.decision.by}</span>
-        )}
-      </div>
+      {/* While a decision is open, the buttons say it all; afterwards, show what was decided. */}
+      {(!decidable || data.decision.by) && (
+        <div className="row-between">
+          <span className={`pill s-${data.status}`}>{STATUS_LABEL[data.status] ?? data.status}</span>
+          {data.decision.by && <span className="muted small">by {data.decision.by}</span>}
+        </div>
+      )}
       {data.decision.note && <p className="small quote">“{data.decision.note}”</p>}
       {decidable && !mode && (
         <div className="decision-buttons">
@@ -68,7 +69,9 @@ export function DecisionPanel({ data, reload }: { data: SubmissionDetail; reload
         </div>
       )}
       {decidable && blocking > 0 && !mode && (
-        <p className="muted small">{blocking} open error/warning issue(s) must be resolved or dismissed before approving.</p>
+        <p className="muted small">
+          {blocking} issue{blocking > 1 ? "s" : ""} left to resolve or dismiss before approving.
+        </p>
       )}
       {decided && !mode && (
         <button className="link-button small" onClick={() => setMode("reopen")}>Reopen this decision</button>

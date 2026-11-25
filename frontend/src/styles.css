@@ -93,7 +93,31 @@ table.list tr:last-child td { border-bottom: none; }
 /* review */
 .review-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr) 340px; height: calc(100vh - 52px); }
 .sidebar, .panel { overflow-y: auto; padding: 18px 20px 40px; background: var(--surface); }
-.sidebar { border-right: 1px solid var(--border); }
+.sidebar { border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.sidebar-scroll { flex: 1; overflow-y: auto; padding: 18px 20px 24px; }
+.sidebar-footer { border-top: 1px solid var(--border); padding: 10px 14px; background: var(--surface); }
+.sidebar-footer .decision { margin: 0; border: none; padding: 0; gap: 6px; }
+.sidebar-footer .decision-buttons { flex-wrap: nowrap; gap: 6px; }
+.sidebar-footer .decision-buttons button { padding: 6px 10px; font-size: 13px; white-space: nowrap; }
+.sidebar-footer p { margin: 0; }
+.todo-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.small-button { padding: 4px 10px; font-size: 12px; }
+.small-pill { font-size: 11px; margin-left: 6px; }
+.fold { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+.fold > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); list-style-position: inside; }
+.fold[open] > summary { margin-bottom: 8px; }
+.fold.notes { border-top: none; margin-top: 6px; padding-top: 0; }
+.page-issues { margin: 10px 0 4px; }
+.all-clear { margin: 10px 0 4px; padding: 6px 10px; border-radius: 6px; background: var(--ok-soft); color: var(--ok); }
+.chip.flagged { position: relative; }
+.chip.flagged::after { content: ""; position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--warning); border: 1px solid var(--surface); }
+.applicant-name .test-pill { margin-left: 8px; vertical-align: middle; }
+.shortcut-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: grid; place-items: center; z-index: 60; padding: 16px; }
+.shortcut-card { background: var(--surface); border-radius: 12px; padding: 18px 22px; width: min(360px, 100%); display: grid; gap: 12px; }
+.shortcut-card h2 { margin: 0; }
+.shortcut-card dl { margin: 0; display: grid; gap: 6px; font-size: 14px; }
+.shortcut-card dl div { display: grid; grid-template-columns: 110px 1fr; }
+.shortcut-card dd { margin: 0; }
 .panel { border-left: 1px solid var(--border); }
 .back { font-size: 12px; color: var(--accent); text-decoration: none; }
 .applicant-name { margin: 10px 0 8px; font-size: 18px; }
@@ -130,7 +154,7 @@ table.list tr:last-child td { border-bottom: none; }
 .chip.q-retake { border-color: var(--warning); }
 .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-.viewer { overflow: auto; padding: 20px; display: flex; justify-content: center; align-items: flex-start; }
+.page-view { overflow: auto; padding: 20px; display: flex; justify-content: center; align-items: flex-start; }
 .image-wrap { position: relative; max-width: 100%; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12); background: #fff; min-height: 200px; min-width: 200px; }
 .image-wrap img { display: block; max-width: 100%; height: auto; max-height: calc(100vh - 92px); }
 .image-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
@@ -162,6 +186,8 @@ table.fields tr.hot { background: var(--accent-soft); }
   .review-layout { grid-template-columns: 280px minmax(0, 1fr); }
   .panel { grid-column: 1 / -1; border-left: none; border-top: 1px solid var(--border); }
   .review-layout { height: auto; }
+  .sidebar { overflow: visible; }
+  .sidebar-footer { position: sticky; bottom: 0; }
 }
 
 /* sign-in */
